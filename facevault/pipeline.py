@@ -1,6 +1,7 @@
 """The whole workflow in four steps: set up keys, protect, alert, reveal."""
 
 import base64
+import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -16,6 +17,7 @@ RECIPIENT_KEY = "alert-recipient.key"
 RECIPIENT_PUBLIC = "alert-recipient.pub"
 SHARES_DIR = "shares"
 AUDIT_LOG = "audit.jsonl"
+CAPTURE_LOG = "capture-log.jsonl"
 
 
 def write_key(path, data):
@@ -64,8 +66,11 @@ class ProtectOutcome:
     matches: list = field(default_factory=list)   # [{"label", "score", "box"}]
 
 
-def protect_image(rgb, vault_public, detector, context=None, watchlist=None):
-    """Find the faces, check them against the watch-list, then lock them."""
+def protect_image(rgb, vault_public, detector, context=None, watchlist=None, signing_private=None):
+    """Find the faces, check them against the watch-list, then lock them.
+
+    With the camera's `signing_private` key the protected image is signed.
+    """
     faces = detector.detect(rgb)
     matches = []
     if watchlist is not None:
@@ -73,8 +78,47 @@ def protect_image(rgb, vault_public, detector, context=None, watchlist=None):
             hit = watchlist.match(rgb, face)
             if hit:
                 matches.append({"label": hit[0], "score": round(hit[1], 4), "box": list(face.box)})
-    protected, header = vault.protect(rgb, [face.box for face in faces], vault_public, context)
+    protected, header = vault.protect(rgb, [face.box for face in faces], vault_public, context, signing_private=signing_private)
     return ProtectOutcome(protected, header, faces, matches)
+
+
+def file_digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def record_capture(keys_dir, image_path, camera):
+    """Add a saved protected image to the camera's signed, chained capture log.
+
+    The log is what makes a later deletion or swap of the file show up.
+    """
+    keys_dir = Path(keys_dir)
+    log = AuditLog(keys_dir / CAPTURE_LOG)
+    return log.append("capture", [camera], Path(image_path).name, "sha256:" + file_digest(image_path),
+                      signing_private=read_key(keys_dir / CAMERA_KEY))
+
+
+def check_captures(keys_dir, folder):
+    """Compare the capture log with the files in `folder`.
+
+    Returns (log_ok, rows): log_ok is False if the log itself was edited or
+    holds an entry the camera did not sign; rows are (entry, status) with
+    status "ok", "missing" or "altered" for the newest entry of each file.
+    """
+    keys_dir, folder = Path(keys_dir), Path(folder)
+    log = AuditLog(keys_dir / CAPTURE_LOG)
+    log_ok, _ = log.verify(read_key(keys_dir / CAMERA_PUBLIC))
+    newest = {entry["target"]: entry for entry in log.entries()}
+    rows = []
+    for entry in newest.values():
+        path = folder / entry["target"]
+        if not path.exists():
+            status = "missing"
+        elif "sha256:" + file_digest(path) != entry["reason"]:
+            status = "altered"
+        else:
+            status = "ok"
+        rows.append((entry, status))
+    return log_ok, rows
 
 
 def make_alert(outcome, protected_name):
@@ -105,15 +149,16 @@ def read_alert(path, keys_dir):
     return alerts.open_alert(envelope, read_key(keys_dir / RECIPIENT_KEY), read_key(keys_dir / CAMERA_PUBLIC))
 
 
-def reveal_image(protected, header, shares, reason, audit_path, target):
+def reveal_image(protected, header, shares, reason, audit_path, target, trusted_camera=None):
     """Rebuild the vault key from the officers' shares, unlock the faces, and log it.
 
     Failed attempts are logged too. The rebuilt key lives only inside this call.
+    With `trusted_camera` the image must carry that camera's signature.
     """
     log = AuditLog(audit_path)
     actors = sorted(f"officer-{share.index}" for share in shares)
     try:
-        result = vault.reveal(protected, header, sharing.combine(shares))
+        result = vault.reveal(protected, header, sharing.combine(shares), trusted_camera)
     except (ValueError, vault.TamperedError) as error:
         log.append("reveal-denied", actors, target, f"{reason} [{error}]")
         raise

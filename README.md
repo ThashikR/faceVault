@@ -43,12 +43,18 @@ the comparison can be reproduced.
 | Public-key camera | The camera derives each image's key from the vault's public key, so it cannot unlock what it locked | X25519, HKDF-SHA256 |
 | Shared custody | The vault's private key is split so any *k* of *n* officers can rebuild it and fewer cannot | Asmuth-Bloom sharing (Chinese Remainder Theorem) |
 | Alerts | A watch-list match is sent encrypted to the recipient and signed by the camera | SFace, X25519, ChaCha20-Poly1305, Ed25519 |
+| Signed images | The camera signs every image it locks, so an image made by anyone else is refused | Ed25519 |
+| Capture log | The camera lists every image it locked in a signed, hash-chained file, so a deleted or swapped image shows up | SHA-256, Ed25519 |
 | Audit log | Every unlock and every refused attempt is recorded in a hash-chained file | SHA-256 |
 
 The protected image is one PNG file. It carries everything needed to unlock it
 except the private key. Changing a single bit of a face region, of the header,
 or of the camera/time context makes unlocking fail; editing the rest of the
 picture is reported.
+
+Encryption cannot stop someone deleting a file. The capture log makes it
+visible instead: `python -m facevault captures` lists every image the camera
+locked and marks each as present, missing or altered.
 
 No new cipher is invented here. The Chinese Remainder Theorem, which the 2024
 project used on pixels, is used for the job it suits: sharing a key.
@@ -203,6 +209,7 @@ python -m facevault protect photo.jpg -o protected.png --watchlist people/
 python -m facevault reveal protected.png -o unlocked.png --share keys/shares/officer-1.json --share keys/shares/officer-3.json --reason "case 42"
 python -m facevault read-alert outbox/<file>.alert.json
 python -m facevault audit
+python -m facevault captures --folder .
 python -m facevault legacy photo.jpg
 ```
 
@@ -242,7 +249,8 @@ facevault/
   hybrid.py       public-key key agreement
   sharing.py      k-of-n key sharing
   alerts.py       encrypted, signed alerts
-  audit.py        hash-chained unlock log
+  audit.py        hash-chained, signable logs (unlocks, captures)
+  signing.py      camera signatures
   detect.py       face detection and watch-list matching
   pipeline.py     the workflow that ties the parts together
   cli.py          command line
@@ -272,6 +280,10 @@ original-2024/    the 2024 project as it was (original code and its README)
   scheme is the usual production choice.
 - The audit log detects edits. It cannot stop someone who can rewrite the whole
   file unless its latest hash is also kept somewhere else.
+- The capture log shows a deleted or swapped image, and its entries cannot be
+  forged without the camera's key. Entries cut from the END of the log, with
+  their images, leave no trace unless the latest hash is also kept elsewhere.
+  Nothing here prevents deletion; keep copies if the images matter.
 - The demo keeps every key on one machine. A real deployment puts the camera
   key, the alert recipient's key and each officer's share on separate devices.
 - This is a student research project and has not had an independent security

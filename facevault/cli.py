@@ -33,9 +33,12 @@ def _cmd_protect(args):
 
     rgb = vault.load_image(args.image)
     context = {"camera": args.camera, "source": Path(args.image).name}
-    outcome = pipeline.protect_image(rgb, pipeline.read_key(keys / pipeline.VAULT_PUBLIC), detector, context, watchlist)
+    outcome = pipeline.protect_image(rgb, pipeline.read_key(keys / pipeline.VAULT_PUBLIC), detector, context, watchlist,
+                                     signing_private=pipeline.read_key(keys / pipeline.CAMERA_KEY))
     vault.save_png(args.out, outcome.protected, outcome.header)
+    pipeline.record_capture(keys, args.out, args.camera)
     print(f"{len(outcome.faces)} face(s) found, {len(outcome.header['boxes'])} region(s) locked -> {args.out}")
+    print("image signed by the camera and added to the capture log")
 
     if outcome.matches:
         path = pipeline.send_alert(pipeline.make_alert(outcome, Path(args.out).name), keys, args.outbox)
@@ -48,7 +51,8 @@ def _cmd_reveal(args):
     protected, header = vault.load_png(args.image)
     shares = [sharing.Share.from_json(Path(path).read_text(encoding="utf-8")) for path in args.share]
     try:
-        result = pipeline.reveal_image(protected, header, shares, args.reason, keys / pipeline.AUDIT_LOG, Path(args.image).name)
+        result = pipeline.reveal_image(protected, header, shares, args.reason, keys / pipeline.AUDIT_LOG, Path(args.image).name,
+                                       trusted_camera=pipeline.read_key(keys / pipeline.CAMERA_PUBLIC))
     except (ValueError, vault.TamperedError) as error:
         print(f"DENIED: {error}")
         return 1
@@ -70,6 +74,18 @@ def _cmd_audit(args):
     ok, bad = log.verify()
     print("log chain: intact" if ok else f"log chain: BROKEN at entry {bad}")
     return 0 if ok else 1
+
+
+def _cmd_captures(args):
+    """List every image the camera locked and say whether each file is still there, unchanged."""
+    log_ok, rows = pipeline.check_captures(args.keys, args.folder)
+    for entry, status in rows:
+        print(f"{entry['seq']:>3}  {entry['time']}  {', '.join(entry['actors'])}  {entry['target']:<30}  {status.upper() if status != 'ok' else 'ok'}")
+    print("capture log: intact and signed by the camera" if log_ok else "capture log: EDITED, or holds an entry the camera did not sign")
+    problems = [status for _, status in rows if status != "ok"]
+    if problems:
+        print(f"{problems.count('missing')} image(s) missing, {problems.count('altered')} altered")
+    return 0 if log_ok and not problems else 1
 
 
 def _cmd_legacy(args):
@@ -126,6 +142,11 @@ def main(argv=None):
     p = sub.add_parser("audit", help="print the unlock log and check it was not altered")
     p.add_argument("--keys", default="keys")
     p.set_defaults(run=_cmd_audit)
+
+    p = sub.add_parser("captures", help="check that every image the camera locked is still there and unchanged")
+    p.add_argument("--keys", default="keys")
+    p.add_argument("--folder", default=".", help="folder holding the protected images")
+    p.set_defaults(run=_cmd_captures)
 
     p = sub.add_parser("legacy", help="show why the 2024 residue scheme is not encryption")
     p.add_argument("image")

@@ -21,7 +21,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 
-from . import hybrid
+from . import hybrid, signing
 
 VERSION = 1
 ALGORITHM = "X25519-HKDF-SHA256+AES-256-GCM"
@@ -102,11 +102,14 @@ def _aad(core, index):
     return canonical_json(core) + b"|" + str(index).encode("ascii")
 
 
-def protect(image, boxes, vault_public, context=None, margin=0.15):
+def protect(image, boxes, vault_public, context=None, margin=0.15, signing_private=None):
     """Encrypt the given face boxes in place. Returns (protected_image, header).
 
     `context` (camera id, time, ...) is stored readable in the header and is
     bound to the ciphertext, so it cannot be swapped without detection.
+    With `signing_private` (the camera's Ed25519 key) the header is signed, so
+    an image made by anyone else, who needs only the public vault key to make
+    one, can be told apart from the camera's.
     """
     image = np.ascontiguousarray(image, dtype=np.uint8)
     boxes = prepare_boxes(boxes, image.shape, margin)
@@ -121,6 +124,8 @@ def protect(image, boxes, vault_public, context=None, margin=0.15):
         "bg_sha256": _background_hash(image, boxes),
         "boxes": boxes,
     }
+    if signing_private is not None:
+        core["camera"] = _b64(signing.public_from_private(signing_private))
 
     aes = AESGCM(key)
     protected = image.copy()
@@ -135,14 +140,35 @@ def protect(image, boxes, vault_public, context=None, margin=0.15):
 
     header = dict(core)
     header["rois"] = rois
+    if signing_private is not None:
+        # The tags tie the ciphertext to the header, so signing the header covers the whole image.
+        header["signature"] = _b64(signing.sign(signing_private, canonical_json(header)))
     return protected, header
 
 
-def reveal(protected, header, vault_private):
-    """Decrypt every face region. Raises TamperedError if anything was altered."""
+def signed_by(header, camera_public):
+    """True if the header carries a valid signature from this camera."""
+    try:
+        unsigned = {name: value for name, value in header.items() if name != "signature"}
+        return (_unb64(header["camera"]) == camera_public
+                and signing.verify(camera_public, _unb64(header["signature"]), canonical_json(unsigned)))
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def reveal(protected, header, vault_private, trusted_camera=None):
+    """Decrypt every face region. Raises TamperedError if anything was altered.
+
+    With `trusted_camera` (a camera's public signing key) the image must also
+    carry that camera's signature.
+    """
     protected = np.ascontiguousarray(protected, dtype=np.uint8)
+    if trusted_camera is not None and not signed_by(header, trusted_camera):
+        raise TamperedError("image is not signed by the trusted camera")
     try:
         core = {name: header[name] for name in ("v", "alg", "shape", "eph", "context", "bg_sha256", "boxes")}
+        if "camera" in header:
+            core["camera"] = header["camera"]
         rois = header["rois"]
         if core["v"] != VERSION or list(protected.shape) != core["shape"] or len(rois) != len(core["boxes"]):
             raise TamperedError("header does not match this image")

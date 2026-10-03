@@ -85,7 +85,8 @@ with tab_protect:
 
     if st.button("Protect image", type="primary"):
         outcome = pipeline.protect_image(rgb, pipeline.read_key(KEYS / pipeline.VAULT_PUBLIC), detector,
-                                         {"camera": camera, "source": source}, watchlist)
+                                         {"camera": camera, "source": source}, watchlist,
+                                         signing_private=pipeline.read_key(KEYS / pipeline.CAMERA_KEY))
         name = f"{Path(source).stem}.protected.png"
         st.session_state["protected"] = (outcome.protected, outcome.header, name)
         st.session_state["protect_note"] = f"{len(outcome.faces)} face(s) found, {len(outcome.header['boxes'])} region(s) locked."
@@ -131,7 +132,8 @@ with tab_reveal:
             else:
                 try:
                     result = pipeline.reveal_image(protected, header, [shares[c] for c in chosen], reason.strip(),
-                                                   KEYS / pipeline.AUDIT_LOG, name)
+                                                   KEYS / pipeline.AUDIT_LOG, name,
+                                                   trusted_camera=pipeline.read_key(KEYS / pipeline.CAMERA_PUBLIC))
                     st.image(result.image, caption="Unlocked: identical to the original, bit for bit")
                     if not result.background_intact:
                         st.warning("The area outside the faces was edited after the image was protected.")

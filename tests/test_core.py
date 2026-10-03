@@ -157,6 +157,81 @@ def test_pixelation_makes_flat_blocks(image):
     assert np.all(region[:8, :8] == region[0, 0])
 
 
+# --- images signed by the camera ---------------------------------------------
+
+def test_signed_image_is_accepted_from_the_trusted_camera(image, keypair):
+    private, public = keypair
+    camera_private, camera_public = alerts.generate_signing_keypair()
+    protected, header = vault.protect(image, BOXES, public, {"camera": "gate-1"}, signing_private=camera_private)
+    assert vault.signed_by(header, camera_public)
+    assert np.array_equal(vault.reveal(protected, header, private, trusted_camera=camera_public).image, image)
+
+
+def test_image_made_without_the_camera_key_is_refused(image, keypair):
+    """Anyone holding the public vault key can make a protected image; only the camera can sign one."""
+    private, public = keypair
+    _, camera_public = alerts.generate_signing_keypair()
+    forger_private, _ = alerts.generate_signing_keypair()
+    for signing_private in (None, forger_private):
+        protected, header = vault.protect(image, BOXES, public, signing_private=signing_private)
+        with pytest.raises(vault.TamperedError):
+            vault.reveal(protected, header, private, trusted_camera=camera_public)
+
+
+def test_signature_cannot_be_stripped_or_moved(image, keypair):
+    private, public = keypair
+    camera_private, camera_public = alerts.generate_signing_keypair()
+    protected, header = vault.protect(image, BOXES, public, {"camera": "gate-1"}, signing_private=camera_private)
+
+    stripped = {name: value for name, value in header.items() if name not in ("signature", "camera")}
+    with pytest.raises(vault.TamperedError):
+        vault.reveal(protected, stripped, private)            # the camera field is bound to the ciphertext
+
+    edited = {**header, "context": {"camera": "gate-2"}}
+    assert not vault.signed_by(edited, camera_public)
+
+
+# --- capture log: a deleted or swapped image shows up --------------------------
+
+def test_capture_log_reports_missing_and_altered_images(image, tmp_path):
+    keys, store = tmp_path / "keys", tmp_path / "store"
+    pipeline.setup_keys(keys)
+    store.mkdir()
+    public = pipeline.read_key(keys / pipeline.VAULT_PUBLIC)
+    camera_private = pipeline.read_key(keys / pipeline.CAMERA_KEY)
+    for name in ("a.png", "b.png", "c.png"):
+        protected, header = vault.protect(image, BOXES, public, signing_private=camera_private)
+        vault.save_png(store / name, protected, header)
+        pipeline.record_capture(keys, store / name, "gate-1")
+
+    log_ok, rows = pipeline.check_captures(keys, store)
+    assert log_ok and [status for _, status in rows] == ["ok", "ok", "ok"]
+
+    (store / "b.png").unlink()                                  # someone deletes an image
+    other, other_header = vault.protect(image, BOXES, public)   # someone swaps another
+    vault.save_png(store / "c.png", other, other_header)
+    log_ok, rows = pipeline.check_captures(keys, store)
+    assert log_ok and {entry["target"]: status for entry, status in rows} == {"a.png": "ok", "b.png": "missing", "c.png": "altered"}
+
+
+def test_capture_log_cannot_be_rewritten_without_the_camera_key(image, tmp_path):
+    keys, store = tmp_path / "keys", tmp_path / "store"
+    pipeline.setup_keys(keys)
+    store.mkdir()
+    public = pipeline.read_key(keys / pipeline.VAULT_PUBLIC)
+    for name in ("a.png", "b.png"):
+        protected, header = vault.protect(image, BOXES, public)
+        vault.save_png(store / name, protected, header)
+        pipeline.record_capture(keys, store / name, "gate-1")
+    assert pipeline.check_captures(keys, store)[0]
+
+    # An insider removes the first entry and rebuilds a consistent chain, but cannot sign it.
+    (keys / pipeline.CAPTURE_LOG).unlink()
+    AuditLog(keys / pipeline.CAPTURE_LOG).append("capture", ["gate-1"], "b.png", "sha256:" + pipeline.file_digest(store / "b.png"))
+    assert AuditLog(keys / pipeline.CAPTURE_LOG).verify() == (True, None)      # the chain alone looks fine
+    assert not pipeline.check_captures(keys, store)[0]                          # the signature check does not
+
+
 # --- threshold key sharing --------------------------------------------------
 
 @pytest.mark.parametrize("k,n", [(2, 3), (3, 5), (4, 4)])
