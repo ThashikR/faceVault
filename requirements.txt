@@ -1,0 +1,16 @@
+# Core
+numpy
+opencv-python
+cryptography
+Pillow
+
+# Demo app
+streamlit
+
+# Experiments and figures
+matplotlib
+scikit-learn
+scikit-image
+
+# Tests
+pytest

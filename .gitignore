@@ -1,0 +1,20 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Downloaded, not ours to redistribute
+models/*.onnx
+data/
+
+# Secrets and per-machine output: never commit keys
+keys/
+demo_keys/
+outbox/
+legacy_out/
+*.key
+audit.jsonl
+
+# Scratch output
+out/

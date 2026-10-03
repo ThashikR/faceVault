@@ -1,0 +1,9 @@
+[project]
+name = "facevault"
+version = "1.0.0"
+description = "Privacy-preserving surveillance: faces are encrypted in place and unlocked only by a quorum of key holders."
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
