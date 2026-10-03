@@ -38,7 +38,7 @@ the comparison can be reproduced.
 
 | Part | What it does | Built with |
 |---|---|---|
-| Face detection | Finds faces on the CPU | OpenCV YuNet |
+| Face detection | Finds faces on the CPU | OpenCV YuNet; optionally SCRFD-10G |
 | Locking | Encrypts each face rectangle and writes the ciphertext into the same pixels | AES-256-GCM |
 | Public-key camera | The camera derives each image's key from the vault's public key, so it cannot unlock what it locked | X25519, HKDF-SHA256 |
 | Shared custody | The vault's private key is split so any *k* of *n* officers can rebuild it and fewer cannot | Asmuth-Bloom sharing (Chinese Remainder Theorem) |
@@ -93,29 +93,32 @@ tables are in [results/tables.md](results/tables.md).
 **Against blur and pixelation**
 
 Blurring or pixelating faces is what most systems do. The same face regions
-were hidden by each method, and a face recogniser was then given a *different*
-photo of the same person, as a watch-list would be (500 people).
+were hidden by each method, and two independent face recognisers were then
+given a *different* photo of the same person, as a watch-list would be (500
+people). Each recogniser's threshold is set so that it wrongly accepts 1 pair
+of different people in 1,000.
 
 ![The same face hidden by blur, pixelation, a black box and FaceVault](results/figures/obfuscation.png)
 
-| Method | Still recognised | Matched to a wrong person (chance) | Original recoverable |
+| Method | Recognised by SFace | Recognised by ArcFace R50 | Original recoverable |
 |---|---|---|---|
-| No protection | 95.8% | 0.0% | |
-| Gaussian blur, 15 px | 92.6% | 0.2% | no |
-| Gaussian blur, 45 px | 11.2% | 0.0% | no |
-| Pixelation, 8 px blocks | 2.4% | 0.0% | no |
-| Pixelation, 16 px blocks | 0.0% | 0.2% | no |
+| No protection | 95.8% | 96.6% | |
+| Gaussian blur, 15 px | 92.8% | 96.4% | no |
+| Gaussian blur, 45 px | 11.2% | 69.2% | no |
+| Pixelation, 8 px blocks | 2.4% | 82.0% | no |
+| Pixelation, 16 px blocks | 0.0% | 0.8% | no |
 | Black box | 0.0% | 0.0% | no |
 | FaceVault | 0.0% | 0.0% | yes, bit for bit |
 
-Light blur hides almost nothing from a machine, and heavy blur still lets it
-recognise one face in nine. The methods that do hide the face destroy it.
-FaceVault is the only row that hides the face and can give it back. Its
-protected faces are no more similar to the right person (mean similarity
-0.027) than to a wrong one (0.026).
+How safe blur looks depends on which recogniser you test it with. Against the
+smaller model, heavy blur and 8 px pixelation seem to work. The stronger model
+still recognises 69.2% and 82.0% of those faces, with no retraining. The
+methods that defeat both models, coarse pixelation and a black box, destroy the
+face for everyone. FaceVault defeats both and can give the face back.
 
-The recogniser here is an ordinary one that was never trained on blurred
-faces, so these figures are a lower limit on what blur and pixelation leak.
+A protected face is no more similar to the right person than to a wrong one
+(mean similarity 0.027 in both cases with SFace). The percentages in the figure
+are SFace at its recommended threshold of 0.363.
 
 **In crowded scenes: the limit**
 
@@ -124,21 +127,30 @@ Portraits are easy for a face detector. On the WIDER FACE validation set
 some faces, and a missed face is not locked. A face counts as locked when at
 least 90% of its marked box is encrypted.
 
-![Share of annotated faces locked, by face size](results/figures/crowd.png)
+Detectors score on different scales, and a lower confidence always locks more
+faces by locking more of the picture. So they are compared at equal cost: each
+at the confidence that locks the same share of the image, about 8.5%.
 
-| Face height in the image | Faces | Locked, one detection pass | Locked, two passes |
+![Faces locked against the share of the image locked, for each detector](results/figures/crowd_tradeoff.png)
+
+| Detector | Faces 32 px and over locked | Left fully visible | Detection time per image |
 |---|---|---|---|
-| Under 16 px | 15,266 | 41.8% | 66.5% |
-| 16 to 31 px | 11,184 | 74.9% | 84.2% |
-| 32 to 63 px | 7,553 | 85.6% | 89.9% |
-| 64 to 127 px | 3,191 | 89.1% | 92.4% |
-| 128 px and over | 1,918 | 90.5% | 93.4% |
+| YuNet (default) | 87.2% | 7.3% | 48 ms |
+| YuNet, two passes | 85.8% | 9.9% | 190 ms |
+| SCRFD-10G (optional, research-only) | 91.9% | 5.3% | 100 ms |
 
-The second pass runs the detector again on the image enlarged 2x. It helps at
-every size and costs time: 206 ms per image against 41 ms. For faces 32 px and
-taller, 87.2% were locked with one pass and 91.0% with two, so in a crowd about
-one face in eleven is still not fully locked. The cipher is sound; the face
-detector is now the weak point, and a stronger detector is the next step.
+- **A second YuNet pass on an enlarged image does not help.** At a fixed
+  confidence it locks more faces, but only by locking more of the picture; at
+  equal cost it is no better than one pass and four times slower.
+- **A stronger detector does help.** SCRFD-10G locks 91.9% of these faces
+  against 87.2%, and it keeps improving cheaply: 95.0% for 9.4% of the image,
+  where YuNet needs 15.9% of the image to reach 92.8%.
+- **Neither is enough for a crowd.** Even the stronger detector leaves about
+  one face in twenty of this size unprotected at that setting. The cipher is
+  sound; the detector is the weak point.
+
+Faces under 16 px tall are mostly missed by every detector tried
+([full table](results/tables.md)).
 
 Things the numbers also say, which matter as much as the good ones:
 
@@ -200,6 +212,16 @@ Tests:
 pytest
 ```
 
+Optional: a stronger face detector and a second recogniser, used by the
+experiments. The model files are InsightFace's and are licensed for
+non-commercial research only.
+
+```bash
+pip install onnxruntime
+python scripts/fetch_research_models.py
+python -m facevault protect photo.jpg -o protected.png --detector scrfd
+```
+
 Reproduce the measurements (downloads LFW, about 230 MB, and the WIDER FACE
 validation set, about 365 MB):
 
@@ -228,6 +250,7 @@ facevault/
   attacks.py      attacks on the 2024 scheme
   metrics.py      entropy, correlation, NPCR, UACI, MSE, PSNR
   obfuscate.py    blur, pixelation and black box, as baselines
+  research_models.py  optional SCRFD-10G detector and ArcFace recogniser
 app.py            Streamlit demo
 experiments/      the script behind every number in this README
 tests/            pytest suite
@@ -272,6 +295,8 @@ no dataset image is included in this repository.
   no. 3, March 2024, DOI [10.55041/IJSREM29001](https://doi.org/10.55041/IJSREM29001).
 - This rebuild: Thashik R Paul, developed with AI assistance (Claude).
 - Face models: [OpenCV Zoo](https://github.com/opencv/opencv_zoo) (YuNet, SFace).
+  Optional research-only models: [InsightFace](https://github.com/deepinsight/insightface)
+  (SCRFD-10G, ArcFace R50).
 - Datasets: Labeled Faces in the Wild, University of Massachusetts Amherst;
   WIDER FACE, The Chinese University of Hong Kong.
 

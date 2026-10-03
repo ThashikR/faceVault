@@ -5,7 +5,7 @@ __pycache__/
 .pytest_cache/
 
 # Downloaded, not ours to redistribute
-models/*.onnx
+models/
 data/
 
 # Secrets and per-machine output: never commit keys

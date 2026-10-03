@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from facevault import attacks, detect, hybrid, legacy_rns, metrics, obfuscate, sharing, vault  # noqa: E402
+from facevault import attacks, detect, hybrid, legacy_rns, metrics, obfuscate, research_models, sharing, vault  # noqa: E402
 
 LFW_DIR = ROOT / "data" / "lfw_home" / "lfw_funneled"
 WIDER_DIR = ROOT / "data" / "wider_face"
@@ -307,10 +307,16 @@ def photo_pairs(all_paths, people, seed):
     return [(by_person[names[i]][0], by_person[names[i]][1]) for i in chosen]
 
 
-def run_obfuscation(paths, pairs, detector, observer, matcher):
-    """Hide the same face regions with each method; ask a detector and a recogniser what is left."""
+FALSE_ACCEPT_RATE = 0.001   # a second threshold per recogniser: 1 pair of different people in 1,000 accepted
+
+
+def run_obfuscation(paths, pairs, detector, observer, matcher, second=None):
+    """Hide the same face regions with each method; ask a detector and recognisers what is left."""
     _, public = hybrid.generate_keypair()
     methods = obfuscation_methods(public)
+    recognisers = {"sface": matcher}
+    if second is not None:
+        recognisers["arcface"] = second
 
     def hidden_versions(rgb, faces):
         boxes = vault.prepare_boxes([face.box for face in faces], rgb.shape)
@@ -337,25 +343,42 @@ def run_obfuscation(paths, pairs, detector, observer, matcher):
 
     # Part 2: the attacker holds a different photo of the same person, as a watch-list would.
     # Matching the hidden face against a WRONG person shows what chance alone produces.
-    enrolled, probes = [], []
+    enrolled = {name: [] for name in recognisers}
+    probes = []
     for enrolled_path, probe_path in pairs:
         enrolled_rgb, probe_rgb = vault.load_image(enrolled_path), vault.load_image(probe_path)
         enrolled_faces, probe_faces = detector.detect(enrolled_rgb), detector.detect(probe_rgb)
         if enrolled_faces and probe_faces:
-            enrolled.append(matcher.embed(enrolled_rgb, enrolled_faces[0]))
+            for name, model in recognisers.items():
+                enrolled[name].append(model.embed(enrolled_rgb, enrolled_faces[0]))
             probes.append((probe_rgb, probe_faces))
     people = len(probes)
-    other_photo = [[] for _ in methods]
-    wrong_person = [[] for _ in methods]
+
+    # Thresholds: the one recommended with SFace, and for each recogniser the
+    # value that accepts 1 in 1,000 pairs of different enrolled people.
+    thresholds = {"sface_recommended": detect.MATCH_THRESHOLD}
+    for name, model in recognisers.items():
+        impostors = [model.similarity(a, b) for a, b in itertools.combinations(enrolled[name], 2)]
+        thresholds[f"{name}_far_0.1pct"] = float(np.quantile(impostors, 1.0 - FALSE_ACCEPT_RATE))
+
+    other_photo = {name: [[] for _ in methods] for name in recognisers}
+    wrong_person = {name: [[] for _ in methods] for name in recognisers}
     for person, (probe_rgb, probe_faces) in enumerate(probes):
         _, versions = hidden_versions(probe_rgb, probe_faces)
         for index, hidden in enumerate(versions):
-            feature = matcher.embed(hidden, probe_faces[0])
-            other_photo[index].append(matcher.similarity(enrolled[person], feature))
-            wrong_person[index].append(matcher.similarity(enrolled[(person + 1) % people], feature))
+            for name, model in recognisers.items():
+                feature = model.embed(hidden, probe_faces[0])
+                other_photo[name][index].append(model.similarity(enrolled[name][person], feature))
+                wrong_person[name][index].append(model.similarity(enrolled[name][(person + 1) % people], feature))
 
-    def matched(scores):
-        return 100.0 * float(np.mean(np.array(scores) >= detect.MATCH_THRESHOLD))
+    def matched(scores, threshold=detect.MATCH_THRESHOLD):
+        return 100.0 * float(np.mean(np.array(scores) >= threshold))
+
+    def by_setting(scores, index):
+        result = {"sface_recommended": matched(scores["sface"][index])}
+        for name in recognisers:
+            result[f"{name}_far_0.1pct"] = matched(scores[name][index], thresholds[f"{name}_far_0.1pct"])
+        return result
 
     return [{
         "method": label,
@@ -363,18 +386,23 @@ def run_obfuscation(paths, pairs, detector, observer, matcher):
         "people": people,
         "face_detected_in_hidden_region_pct": 100.0 * detected[index] / used,
         "matched_to_same_photo_pct": matched(same_photo[index]),
-        "matched_to_other_photo_pct": matched(other_photo[index]),
-        "matched_to_wrong_person_pct": matched(wrong_person[index]),
+        "matched_to_other_photo_pct": matched(other_photo["sface"][index]),
+        "matched_to_wrong_person_pct": matched(wrong_person["sface"][index]),
         "similarity_to_same_photo_mean": mean(same_photo[index]),
-        "similarity_to_other_photo_mean": mean(other_photo[index]),
-        "similarity_to_wrong_person_mean": mean(wrong_person[index]),
+        "similarity_to_other_photo_mean": mean(other_photo["sface"][index]),
+        "similarity_to_wrong_person_mean": mean(wrong_person["sface"][index]),
+        "recognised_pct": by_setting(other_photo, index),
+        "wrong_person_pct": by_setting(wrong_person, index),
+        "similarity_mean": {name: {"right_person": mean(other_photo[name][index]), "wrong_person": mean(wrong_person[name][index])}
+                            for name in recognisers},
+        "thresholds": thresholds,
         "original_recoverable": recoverable,
     } for index, (label, _, recoverable) in enumerate(methods)]
 
 
 # --- 2d. crowded scenes: how many faces does the lock step miss? -------------
 
-CROWD_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3)
+CROWD_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05)
 SIZE_BUCKETS = (("under 16 px", 0, 16), ("16 to 31 px", 16, 32), ("32 to 63 px", 32, 64),
                 ("64 to 127 px", 64, 128), ("128 px and over", 128, 10 ** 9))
 LOCKED, VISIBLE = 0.9, 0.1   # share of a face's annotated box that must be / must not be encrypted
@@ -398,15 +426,28 @@ def wider_annotations():
         i += 2 + max(count, 1)   # an image with no faces still has one placeholder row
 
 
+def crowd_variants():
+    """name -> (label, function returning every face found at the lowest lock confidence)."""
+    lowest = min(CROWD_THRESHOLDS)
+    yunet = detect.FaceDetector(lowest)
+    variants = {
+        "one_scale": ("YuNet, one pass", yunet.detect),
+        "two_scale": ("YuNet, two passes", lambda rgb: yunet.detect(rgb) + yunet.detect_enlarged(rgb, 2)),
+    }
+    if research_models.SCRFD.exists():
+        variants["scrfd_640"] = ("SCRFD-10G", research_models.ScrfdDetector(lowest, long_side=640).detect)
+    return variants
+
+
 def run_crowd(limit=None):
     """Lock WIDER FACE images and count the annotated faces that end up encrypted.
 
-    Detection runs once at the lowest confidence; the higher confidences are
-    the same detections filtered by score. 'two_scale' adds a second pass on
-    a copy enlarged 2x, which finds smaller faces.
+    Each detector runs once at the lowest confidence; the higher confidences
+    are the same detections filtered by score. 'Two passes' adds a pass on a
+    copy enlarged 2x. SCRFD-10G is a stronger, research-only detector.
     """
-    locker = detect.FaceDetector(min(CROWD_THRESHOLDS))
-    variants = ("one_scale", "two_scale")
+    finders = crowd_variants()
+    variants = tuple(finders)
     counts = {v: {t: {name: [0, 0, 0] for name, _, _ in SIZE_BUCKETS} for t in CROWD_THRESHOLDS} for v in variants}
     area = {v: {t: [] for t in CROWD_THRESHOLDS} for v in variants}
     regions = {v: {t: [] for t in CROWD_THRESHOLDS} for v in variants}
@@ -421,15 +462,10 @@ def run_crowd(limit=None):
         images += 1
         faces_total += len(truth)
 
-        start = time.perf_counter()
-        first = locker.detect(rgb)
-        middle = time.perf_counter()
-        second = locker.detect_enlarged(rgb, 2)
-        end = time.perf_counter()
-        times["one_scale"].append((middle - start) * 1000.0)
-        times["two_scale"].append((end - start) * 1000.0)
-
-        for variant, found in (("one_scale", first), ("two_scale", first + second)):
+        for variant, (_, find) in finders.items():
+            start = time.perf_counter()
+            found = find(rgb)
+            times[variant].append((time.perf_counter() - start) * 1000.0)
             for threshold in CROWD_THRESHOLDS:
                 boxes = vault.prepare_boxes([face.box for face in found if face.score >= threshold], rgb.shape)
                 mask = np.zeros((height, width), dtype=bool)
@@ -456,16 +492,27 @@ def run_crowd(limit=None):
         return share([counts[variant][threshold][name] for name, low, _ in SIZE_BUCKETS if low >= minimum_height])
 
     default = detect.LOCK_THRESHOLD
+    target_area = mean(area[variants[0]][default])
+    matched = {v: min(CROWD_THRESHOLDS, key=lambda t: abs(mean(area[v][t]) - target_area)) for v in variants}
+    matched[variants[0]] = default
     return {
         "dataset": "WIDER FACE validation set",
         "images": images,
         "faces": faces_total,
         "locked_means_covered_at_least": LOCKED,
         "visible_means_covered_less_than": VISIBLE,
+        "variants": {v: finders[v][0] for v in variants},
         "detect_ms_median": {v: float(statistics.median(times[v])) for v in variants},
         "by_size_at_lock_threshold": {
             "lock_threshold": default,
             "rows": [{"face_height": name, **{v: share([counts[v][default][name]]) for v in variants}} for name, _, _ in SIZE_BUCKETS],
+        },
+        "matched_area": {
+            "explanation": "each detector at the confidence whose locked image area is closest to the first detector's at the default lock confidence",
+            "lock_threshold": matched,
+            "area_locked_pct": {v: 100.0 * mean(area[v][matched[v]]) for v in variants},
+            "faces_32px_and_over": {v: summary(v, matched[v], 32) for v in variants},
+            "rows": [{"face_height": name, **{v: share([counts[v][matched[v]][name]]) for v in variants}} for name, _, _ in SIZE_BUCKETS],
         },
         "by_lock_threshold": [{
             "lock_threshold": t,
@@ -573,7 +620,7 @@ def run_sharing(trials=200):
 # --- figures -----------------------------------------------------------------
 
 SURFACE, INK, MUTED = "#fcfcfb", "#0b0b0b", "#898781"
-BLUE, ORANGE = "#2a78d6", "#eb6834"
+BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 
 
 def make_figures(results, detector):
@@ -637,25 +684,57 @@ def make_figures(results, detector):
     figure.savefig(FIGURES / "obfuscation.png", dpi=150)
     plt.close(figure)
 
-    # Crowded scenes: share of faces locked, by face size.
+    # Crowded scenes: how many faces are locked against how much of the image is given up.
     if results.get("crowd"):
-        rows = results["crowd"]["by_size_at_lock_threshold"]["rows"]
-        figure, axis = plt.subplots(figsize=(8.2, 3.8))
+        crowd = results["crowd"]
+        labels = crowd["variants"]
+        colours = dict(zip(labels, (BLUE, ORANGE, AQUA)))
+        matched = crowd["matched_area"]
+
+        figure, axis = plt.subplots(figsize=(8.2, 4.2))
+        offsets = dict(zip(labels, ((12, -5), (-12, -20), (-12, 8))))
+        for key, label in labels.items():
+            points = sorted((row[key]["area_locked_pct"], row[key]["faces_32px_and_over"]["locked_pct"], row["lock_threshold"])
+                            for row in crowd["by_lock_threshold"])
+            axis.plot([x for x, _, _ in points], [y for _, y, _ in points], color=colours[key], linewidth=2,
+                      marker="o", markersize=4.5, label=label)
+            x, y = matched["area_locked_pct"][key], matched["faces_32px_and_over"][key]["locked_pct"]
+            axis.plot([x], [y], marker="o", markersize=10, markerfacecolor="none", markeredgecolor=colours[key], markeredgewidth=2)
+            axis.annotate(f"{y:.1f}%", (x, y), textcoords="offset points", xytext=offsets[key], color=INK, fontsize=9.5,
+                          ha="left" if offsets[key][0] > 0 else "right")
+        axis.set_xlabel("Share of the image locked (%)")
+        axis.set_ylabel("Faces 32 px and over locked (%)")
+        axis.set_xlim(0, 30)
+        axis.set_ylim(40, 100)
+        axis.grid(True, color="#e6e5e1", linewidth=0.8)
+        axis.set_axisbelow(True)
+        axis.legend(frameon=False, loc="lower right")
+        for side in ("top", "right"):
+            axis.spines[side].set_visible(False)
+        figure.tight_layout()
+        figure.savefig(FIGURES / "crowd_tradeoff.png", dpi=150)
+        plt.close(figure)
+
+        rows = matched["rows"]
+        width = 0.8 / len(labels)
+        figure, axis = plt.subplots(figsize=(9.2, 3.9))
         positions = np.arange(len(rows))
-        for offset, key, colour, label in ((-0.2, "one_scale", BLUE, "One detection pass"), (0.2, "two_scale", ORANGE, "Two passes (adds 2x enlarged)")):
+        for index, (key, label) in enumerate(labels.items()):
+            offset = (index - (len(labels) - 1) / 2) * width
             values = [row[key]["locked_pct"] for row in rows]
-            axis.bar(positions + offset, values, width=0.36, color=colour, label=label)
+            axis.bar(positions + offset, values, width=width * 0.92, color=colours[key], label=label)
             for position, value in zip(positions + offset, values):
-                axis.text(position, value + 1.5, f"{value:.0f}%", ha="center", color=INK, fontsize=9)
-        axis.set_xticks(positions, [row["face_height"] + chr(10) + f"({row['one_scale']['faces']} faces)" for row in rows])
+                axis.text(position, value + 1.5, f"{value:.0f}%", ha="center", color=INK, fontsize=8.5)
+        first = next(iter(labels))
+        axis.set_xticks(positions, [row["face_height"] + chr(10) + f"({row[first]['faces']} faces)" for row in rows])
         axis.tick_params(axis="x", length=0, labelcolor=INK)
-        axis.set_ylim(0, 118)
+        axis.set_ylim(0, 120)
         axis.set_yticks([0, 25, 50, 75, 100])
         axis.set_ylabel("Annotated faces locked (%)")
         axis.set_xlabel("Face height in the image")
         axis.yaxis.grid(True, color="#e6e5e1", linewidth=0.8)
         axis.set_axisbelow(True)
-        axis.legend(frameon=False, loc="upper left", ncols=2)
+        axis.legend(frameon=False, loc="upper left", ncols=len(labels))
         for side in ("top", "right", "left"):
             axis.spines[side].set_visible(False)
         figure.tight_layout()
@@ -714,32 +793,67 @@ def make_figures(results, detector):
 
 # --- tables ------------------------------------------------------------------
 
+def recogniser_table(rows):
+    """The same comparison with every recogniser at one common operating point."""
+    if "recognised_pct" not in rows[0]:
+        return []
+    settings = [key for key in rows[0]["recognised_pct"] if key != "sface_recommended"]
+    names = {"sface_far_0.1pct": "SFace", "arcface_far_0.1pct": "ArcFace R50"}
+    thresholds = rows[0]["thresholds"]
+    return [
+        "Recognised against another photo of the same person, with each recogniser's threshold set so that",
+        "1 pair of different people in 1,000 is accepted ("
+        + ", ".join(f"{names[key]}: {thresholds[key]:.3f}" for key in settings) + "):",
+        "",
+        "| Method | " + " | ".join(f"{names[key]}, recognised" for key in settings) + " | "
+        + " | ".join(f"{names[key]}, wrong person" for key in settings) + " |",
+        "|---|" + "---|" * (2 * len(settings)),
+        *["| " + row["method"] + " | " + " | ".join(f"{row['recognised_pct'][key]:.1f}%" for key in settings) + " | "
+          + " | ".join(f"{row['wrong_person_pct'][key]:.1f}%" for key in settings) + " |" for row in rows],
+        "",
+    ]
+
+
 def crowd_tables(results):
     crowd = results.get("crowd")
     if not crowd:
         return []
+    labels = crowd["variants"]
+    names = list(labels)
+    first = names[0]
+    matched = crowd["matched_area"]
     by_size = crowd["by_size_at_lock_threshold"]
     return [
         "## Table 2d. Crowded scenes: faces the lock step reaches",
         "",
         f"{crowd['dataset']}: {crowd['images']} images, {crowd['faces']} annotated faces (faces marked invalid left out).",
-        f"A face counts as locked when at least {crowd['locked_means_covered_at_least']:.0%} of its annotated box is encrypted,",
-        f"and as visible when less than {crowd['visible_means_covered_less_than']:.0%} is. 'Two passes' adds a detection pass on the image enlarged 2x.",
-        f"Median detection time per image: {crowd['detect_ms_median']['one_scale']:.0f} ms for one pass, {crowd['detect_ms_median']['two_scale']:.0f} ms for two.",
+        f"A face counts as locked when at least {crowd['locked_means_covered_at_least']:.0%} of its annotated box is encrypted.",
+        "'Two passes' adds a detection pass on the image enlarged 2x. SCRFD-10G is a stronger, research-only detector,",
+        "run with the image's longer side scaled to 640 px.",
         "",
-        f"By face size, at lock confidence {by_size['lock_threshold']}:",
+        "Detectors score on different scales, so they are compared at equal cost: each at the confidence that locks",
+        f"about the same share of the image as {labels[first]} does at confidence {by_size['lock_threshold']}.",
         "",
-        "| Face height | Faces | Locked, one pass | Visible, one pass | Locked, two passes | Visible, two passes |",
+        "| Detector | Lock confidence | Image area locked | Faces 32 px and over locked | Left fully visible | Median detection time |",
         "|---|---|---|---|---|---|",
-        *[f"| {row['face_height']} | {row['one_scale']['faces']} | {row['one_scale']['locked_pct']:.1f}% | {row['one_scale']['visible_pct']:.1f}% | "
-          f"{row['two_scale']['locked_pct']:.1f}% | {row['two_scale']['visible_pct']:.1f}% |" for row in by_size["rows"]],
+        *[f"| {labels[n]} | {matched['lock_threshold'][n]} | {matched['area_locked_pct'][n]:.1f}% | "
+          f"{matched['faces_32px_and_over'][n]['locked_pct']:.1f}% | {matched['faces_32px_and_over'][n]['visible_pct']:.1f}% | "
+          f"{crowd['detect_ms_median'][n]:.0f} ms |" for n in names],
         "",
-        "By lock confidence, faces 32 px and taller:",
+        "Share of faces locked by face size, at those confidences:",
         "",
-        "| Lock confidence | Locked, one pass | Locked, two passes | Image area locked, one pass | Image area locked, two passes |",
-        "|---|---|---|---|---|",
-        *[f"| {row['lock_threshold']} | {row['one_scale']['faces_32px_and_over']['locked_pct']:.1f}% | {row['two_scale']['faces_32px_and_over']['locked_pct']:.1f}% | "
-          f"{row['one_scale']['area_locked_pct']:.1f}% | {row['two_scale']['area_locked_pct']:.1f}% |" for row in crowd["by_lock_threshold"]],
+        "| Face height | Faces | " + " | ".join(labels[n] for n in names) + " |",
+        "|---|---|" + "---|" * len(names),
+        *[f"| {row['face_height']} | {row[first]['faces']} | " + " | ".join(f"{row[n]['locked_pct']:.1f}%" for n in names) + " |"
+          for row in matched["rows"]],
+        "",
+        "Every confidence tried, faces 32 px and over: share locked (share of image area locked).",
+        "",
+        "| Lock confidence | " + " | ".join(labels[n] for n in names) + " |",
+        "|---|" + "---|" * len(names),
+        *[f"| {row['lock_threshold']} | " + " | ".join(
+            f"{row[n]['faces_32px_and_over']['locked_pct']:.1f}% ({row[n]['area_locked_pct']:.1f}%)" for n in names) + " |"
+          for row in crowd["by_lock_threshold"]],
         "",
     ]
 
@@ -806,6 +920,7 @@ def write_tables(results):
           f"{'not needed' if row['original_recoverable'] is None else 'yes, bit for bit' if row['original_recoverable'] else 'no'} |"
           for row in results["obfuscation"]],
         "",
+        *recogniser_table(results["obfuscation"]),
         *crowd_tables(results),
         "## Table 3. Statistics of the stored data",
         "",
@@ -898,7 +1013,8 @@ def main():
         "legacy": lambda: run_legacy(paths, observer),
         "facevault": lambda: run_facevault(paths, detector, observer, matcher, rng),
         "lock_threshold": lambda: run_lock_threshold(paths, observer),
-        "obfuscation": lambda: run_obfuscation(paths, photo_pairs(all_paths, args.people, args.seed), detector, observer, matcher),
+        "obfuscation": lambda: run_obfuscation(paths, photo_pairs(all_paths, args.people, args.seed), detector, observer, matcher,
+                                               research_models.ArcFaceMatcher() if research_models.ARCFACE.exists() else None),
         "crowd": lambda: run_crowd(args.crowd_images),
         "watchlist": lambda: run_watchlist(all_paths, detector, matcher, args.people, rng),
         "speed": lambda: run_speed(detector),
@@ -912,7 +1028,7 @@ def main():
         if (saved["meta"]["images"], saved["meta"]["seed"]) != (len(paths), args.seed):
             sys.exit("--only needs the same --images and --seed as the saved results")
         results = saved
-        steps = {name: steps[name] for name in args.only.split(",")}
+        steps = {name: steps[name] for name in args.only.split(",") if name != "none"}   # "--only none" redraws tables and figures
     for name, step in steps.items():
         start = time.perf_counter()
         results[name] = step()

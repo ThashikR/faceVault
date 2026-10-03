@@ -65,6 +65,21 @@ class FaceDetector:
         return faces
 
 
+def lock_detector(name="yunet"):
+    """The detector that decides what gets locked.
+
+    "yunet" is the default. "scrfd" misses fewer faces in crowded scenes but its
+    model file is licensed for non-commercial research only (research_models.py).
+    """
+    if name == "scrfd":
+        from .research_models import ScrfdDetector
+
+        return ScrfdDetector()
+    if name == "yunet":
+        return FaceDetector()
+    raise ValueError(f"unknown detector: {name}")
+
+
 class FaceMatcher:
     def __init__(self):
         self._net = cv2.FaceRecognizerSF.create(_require(SFACE), "")

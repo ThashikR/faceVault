@@ -21,10 +21,10 @@ def _cmd_setup(args):
 
 
 def _cmd_protect(args):
-    from .detect import FaceDetector, FaceMatcher, Watchlist
+    from .detect import FaceMatcher, Watchlist, lock_detector
 
     keys = Path(args.keys)
-    detector = FaceDetector()
+    detector = lock_detector(args.detector)
     watchlist = None
     if args.watchlist:
         watchlist = Watchlist(detector, FaceMatcher())
@@ -106,6 +106,8 @@ def main(argv=None):
     p.add_argument("--camera", default="camera-01")
     p.add_argument("--watchlist", help="folder of face images; a match sends an encrypted alert")
     p.add_argument("--outbox", default="outbox")
+    p.add_argument("--detector", choices=["yunet", "scrfd"], default="yunet",
+                   help="scrfd misses fewer faces in crowds; research-only model, see scripts/fetch_research_models.py")
     p.set_defaults(run=_cmd_protect)
 
     p = sub.add_parser("reveal", help="unlock a protected image with officers' shares")

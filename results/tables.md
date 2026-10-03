@@ -61,36 +61,61 @@ someone else's photo, which shows what chance alone produces.
 | Pixelation, 8 px blocks | 56.0% | 9.2% | 2.4% (0.161) | 0.0% (0.085) | no |
 | Pixelation, 16 px blocks | 0.0% | 0.5% | 0.0% (0.099) | 0.2% (0.092) | no |
 | Black box | 0.0% | 0.0% | 0.0% (-0.044) | 0.0% (-0.045) | no |
-| FaceVault | 0.0% | 0.0% | 0.0% (0.027) | 0.0% (0.026) | yes, bit for bit |
+| FaceVault | 0.0% | 0.0% | 0.0% (0.027) | 0.0% (0.027) | yes, bit for bit |
+
+Recognised against another photo of the same person, with each recogniser's threshold set so that
+1 pair of different people in 1,000 is accepted (SFace: 0.360, ArcFace R50: 0.205):
+
+| Method | SFace, recognised | ArcFace R50, recognised | SFace, wrong person | ArcFace R50, wrong person |
+|---|---|---|---|---|
+| No protection | 95.8% | 96.6% | 0.0% | 0.0% |
+| Gaussian blur, 15 px | 92.8% | 96.4% | 0.2% | 0.2% |
+| Gaussian blur, 45 px | 11.2% | 69.2% | 0.0% | 0.4% |
+| Pixelation, 8 px blocks | 2.4% | 82.0% | 0.0% | 0.0% |
+| Pixelation, 16 px blocks | 0.0% | 0.8% | 0.2% | 0.0% |
+| Black box | 0.0% | 0.0% | 0.0% | 0.0% |
+| FaceVault | 0.0% | 0.0% | 0.0% | 0.0% |
 
 ## Table 2d. Crowded scenes: faces the lock step reaches
 
 WIDER FACE validation set: 3226 images, 39112 annotated faces (faces marked invalid left out).
-A face counts as locked when at least 90% of its annotated box is encrypted,
-and as visible when less than 10% is. 'Two passes' adds a detection pass on the image enlarged 2x.
-Median detection time per image: 41 ms for one pass, 206 ms for two.
+A face counts as locked when at least 90% of its annotated box is encrypted.
+'Two passes' adds a detection pass on the image enlarged 2x. SCRFD-10G is a stronger, research-only detector,
+run with the image's longer side scaled to 640 px.
 
-By face size, at lock confidence 0.5:
+Detectors score on different scales, so they are compared at equal cost: each at the confidence that locks
+about the same share of the image as YuNet, one pass does at confidence 0.5.
 
-| Face height | Faces | Locked, one pass | Visible, one pass | Locked, two passes | Visible, two passes |
+| Detector | Lock confidence | Image area locked | Faces 32 px and over locked | Left fully visible | Median detection time |
 |---|---|---|---|---|---|
-| under 16 px | 15266 | 41.8% | 48.0% | 66.5% | 26.8% |
-| 16 to 31 px | 11184 | 74.9% | 16.7% | 84.2% | 10.3% |
-| 32 to 63 px | 7553 | 85.6% | 8.8% | 89.9% | 6.0% |
-| 64 to 127 px | 3191 | 89.1% | 5.7% | 92.4% | 4.0% |
-| 128 px and over | 1918 | 90.5% | 4.0% | 93.4% | 2.8% |
+| YuNet, one pass | 0.5 | 8.5% | 87.2% | 7.3% | 48 ms |
+| YuNet, two passes | 0.7 | 8.0% | 85.8% | 9.9% | 190 ms |
+| SCRFD-10G | 0.4 | 8.5% | 91.9% | 5.3% | 100 ms |
 
-By lock confidence, faces 32 px and taller:
+Share of faces locked by face size, at those confidences:
 
-| Lock confidence | Locked, one pass | Locked, two passes | Image area locked, one pass | Image area locked, two passes |
+| Face height | Faces | YuNet, one pass | YuNet, two passes | SCRFD-10G |
 |---|---|---|---|---|
-| 0.9 | 47.4% | 55.2% | 4.1% | 4.5% |
-| 0.8 | 77.3% | 80.8% | 6.5% | 7.0% |
-| 0.7 | 82.5% | 85.8% | 7.2% | 8.0% |
-| 0.6 | 85.2% | 88.7% | 7.8% | 9.2% |
-| 0.5 | 87.2% | 91.0% | 8.5% | 11.4% |
-| 0.4 | 88.8% | 92.7% | 9.5% | 15.9% |
-| 0.3 | 90.5% | 94.8% | 11.5% | 24.6% |
+| under 16 px | 15266 | 41.8% | 49.7% | 25.7% |
+| 16 to 31 px | 11184 | 74.9% | 74.9% | 75.6% |
+| 32 to 63 px | 7553 | 85.6% | 84.2% | 90.1% |
+| 64 to 127 px | 3191 | 89.1% | 87.7% | 94.0% |
+| 128 px and over | 1918 | 90.5% | 89.1% | 95.8% |
+
+Every confidence tried, faces 32 px and over: share locked (share of image area locked).
+
+| Lock confidence | YuNet, one pass | YuNet, two passes | SCRFD-10G |
+|---|---|---|---|
+| 0.9 | 47.4% (4.1%) | 55.2% (4.5%) | 6.5% (0.4%) |
+| 0.8 | 77.3% (6.5%) | 80.8% (7.0%) | 58.3% (4.8%) |
+| 0.7 | 82.5% (7.2%) | 85.8% (8.0%) | 78.5% (7.0%) |
+| 0.6 | 85.2% (7.8%) | 88.7% (9.2%) | 86.4% (7.9%) |
+| 0.5 | 87.2% (8.5%) | 91.0% (11.4%) | 89.9% (8.2%) |
+| 0.4 | 88.8% (9.5%) | 92.7% (15.9%) | 91.9% (8.5%) |
+| 0.3 | 90.5% (11.5%) | 94.8% (24.6%) | 93.8% (8.9%) |
+| 0.2 | 92.8% (15.9%) | 97.2% (41.1%) | 95.0% (9.4%) |
+| 0.1 | 96.2% (29.6%) | 99.3% (72.6%) | 96.8% (11.3%) |
+| 0.05 | 98.5% (52.5%) | 99.9% (92.8%) | 98.3% (16.5%) |
 
 ## Table 3. Statistics of the stored data
 

@@ -54,3 +54,25 @@ def test_watchlist_matches_the_same_person_only(astronaut, detector):
     mirrored = np.ascontiguousarray(astronaut[:, ::-1])
     hit = watchlist.match(mirrored, detector.detect(mirrored)[0])
     assert hit is not None and hit[0] == "collins"
+
+
+def test_research_models_agree_with_the_default_ones(astronaut, detector):
+    """Optional models: skipped unless scripts/fetch_research_models.py has been run."""
+    from facevault import research_models
+
+    if not research_models.SCRFD.exists() or not research_models.ARCFACE.exists():
+        pytest.skip("research models not downloaded")
+    pytest.importorskip("onnxruntime")
+
+    strong = detect.lock_detector("scrfd").detect(astronaut)
+    assert len(strong) == 1
+    assert all(abs(a - b) <= 12 for a, b in zip(strong[0].box, detector.detect(astronaut)[0].box))
+
+    arcface = research_models.ArcFaceMatcher()
+    mirrored = np.ascontiguousarray(astronaut[:, ::-1])
+    same = arcface.similarity(arcface.embed(astronaut, strong[0]), arcface.embed(mirrored, detect.lock_detector("scrfd").detect(mirrored)[0]))
+    assert same > 0.6
+
+    private, public = hybrid.generate_keypair()
+    protected, _ = vault.protect(astronaut, [face.box for face in strong], public)
+    assert arcface.similarity(arcface.embed(astronaut, strong[0]), arcface.embed(protected, strong[0])) < 0.2
