@@ -205,13 +205,13 @@ def test_capture_log_reports_missing_and_altered_images(image, tmp_path):
         pipeline.record_capture(keys, store / name, "gate-1")
 
     log_ok, rows = pipeline.check_captures(keys, store)
-    assert log_ok and [status for _, status in rows] == ["ok", "ok", "ok"]
+    assert log_ok and [status for _, status, _ in rows] == ["ok", "ok", "ok"]
 
     (store / "b.png").unlink()                                  # someone deletes an image
     other, other_header = vault.protect(image, BOXES, public)   # someone swaps another
     vault.save_png(store / "c.png", other, other_header)
     log_ok, rows = pipeline.check_captures(keys, store)
-    assert log_ok and {entry["target"]: status for entry, status in rows} == {"a.png": "ok", "b.png": "missing", "c.png": "altered"}
+    assert log_ok and {entry["target"]: status for entry, status, _ in rows} == {"a.png": "ok", "b.png": "missing", "c.png": "altered"}
 
 
 def test_capture_log_cannot_be_rewritten_without_the_camera_key(image, tmp_path):
@@ -230,6 +230,66 @@ def test_capture_log_cannot_be_rewritten_without_the_camera_key(image, tmp_path)
     AuditLog(keys / pipeline.CAPTURE_LOG).append("capture", ["gate-1"], "b.png", "sha256:" + pipeline.file_digest(store / "b.png"))
     assert AuditLog(keys / pipeline.CAPTURE_LOG).verify() == (True, None)      # the chain alone looks fine
     assert not pipeline.check_captures(keys, store)[0]                          # the signature check does not
+
+
+# --- deletion needs every officer --------------------------------------------
+
+@pytest.fixture
+def stored(image, tmp_path):
+    """A vault with three officers and two captured images."""
+    keys, store = tmp_path / "keys", tmp_path / "store"
+    share_paths = pipeline.setup_keys(keys, threshold=2, officers=3)
+    store.mkdir()
+    public = pipeline.read_key(keys / pipeline.VAULT_PUBLIC)
+    for name in ("a.png", "b.png"):
+        protected, header = vault.protect(image, BOXES, public, signing_private=pipeline.read_key(keys / pipeline.CAMERA_KEY))
+        vault.save_png(store / name, protected, header)
+        pipeline.record_capture(keys, store / name, "gate-1")
+    shares = [sharing.Share.from_json(path.read_text(encoding="utf-8")) for path in share_paths]
+    return keys, store, shares
+
+
+def _statuses(keys, store):
+    return {entry["target"]: status for entry, status, _ in pipeline.check_captures(keys, store)[1]}
+
+
+def test_all_officers_together_can_delete_and_it_is_recorded(stored):
+    keys, store, shares = stored
+    record = pipeline.delete_image(store / "a.png", shares, "court order 12", keys)
+    assert not (store / "a.png").exists()
+    assert record["actors"] == ["officer-1", "officer-2", "officer-3"]
+    assert _statuses(keys, store) == {"a.png": "deleted", "b.png": "ok"}
+    assert AuditLog(keys / pipeline.AUDIT_LOG).entries()[-1]["action"] == "delete"
+
+
+def test_two_officers_can_view_but_cannot_delete(stored):
+    keys, store, shares = stored
+    with pytest.raises(ValueError):
+        pipeline.delete_image(store / "a.png", shares[:2], "no reason", keys)
+    with pytest.raises(ValueError):
+        pipeline.delete_image(store / "a.png", [shares[0], shares[1], shares[1]], "one officer twice", keys)
+    assert (store / "a.png").exists()
+    assert AuditLog(keys / pipeline.AUDIT_LOG).entries()[-1]["action"] == "delete-denied"
+
+
+def test_deleting_by_hand_shows_as_missing_and_cannot_be_dressed_up(stored):
+    keys, store, shares = stored
+    digest = pipeline.file_digest(store / "a.png")
+    (store / "a.png").unlink()                                  # a corrupt officer deletes the file directly
+    assert _statuses(keys, store)["a.png"] == "missing"
+
+    # He then writes his own deletion record. Without all three shares he cannot sign it.
+    AuditLog(keys / pipeline.DELETION_LOG).append("delete", ["officer-1", "officer-2", "officer-3"], "a.png", f"sha256:{digest} | routine")
+    assert _statuses(keys, store)["a.png"] == "missing"
+
+
+def test_shares_of_another_vault_cannot_delete(stored, tmp_path):
+    keys, store, _ = stored
+    other = pipeline.setup_keys(tmp_path / "other", threshold=2, officers=3)
+    strangers = [sharing.Share.from_json(path.read_text(encoding="utf-8")) for path in other]
+    with pytest.raises(ValueError):
+        pipeline.delete_image(store / "a.png", strangers, "wrong vault", keys)
+    assert (store / "a.png").exists()
 
 
 # --- threshold key sharing --------------------------------------------------

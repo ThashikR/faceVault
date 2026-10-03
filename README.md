@@ -45,7 +45,8 @@ the comparison can be reproduced.
 | Alerts | A watch-list match is sent encrypted to the recipient and signed by the camera | SFace, X25519, ChaCha20-Poly1305, Ed25519 |
 | Signed images | The camera signs every image it locks, so an image made by anyone else is refused | Ed25519 |
 | Capture log | The camera lists every image it locked in a signed, hash-chained file, so a deleted or swapped image shows up | SHA-256, Ed25519 |
-| Audit log | Every unlock and every refused attempt is recorded in a hash-chained file | SHA-256 |
+| Agreed deletion | Deleting an image needs every officer's share and leaves a record only they can sign together | Ed25519 key derived from the vault key |
+| Audit log | Every unlock, deletion and refused attempt is recorded in a hash-chained file | SHA-256 |
 
 The protected image is one PNG file. It carries everything needed to unlock it
 except the private key. Changing a single bit of a face region, of the header,
@@ -54,7 +55,9 @@ picture is reported.
 
 Encryption cannot stop someone deleting a file. The capture log makes it
 visible instead: `python -m facevault captures` lists every image the camera
-locked and marks each as present, missing or altered.
+locked and marks each as present, altered, deleted by the officers together
+(with who, when and why), or missing. Viewing needs two of three officers;
+deleting needs all three.
 
 No new cipher is invented here. The Chinese Remainder Theorem, which the 2024
 project used on pixels, is used for the job it suits: sharing a key.
@@ -210,6 +213,7 @@ python -m facevault reveal protected.png -o unlocked.png --share keys/shares/off
 python -m facevault read-alert outbox/<file>.alert.json
 python -m facevault audit
 python -m facevault captures --folder .
+python -m facevault delete protected.png --share keys/shares/officer-1.json --share keys/shares/officer-2.json --share keys/shares/officer-3.json --reason "court order 12"
 python -m facevault legacy photo.jpg
 ```
 
@@ -283,7 +287,10 @@ original-2024/    the 2024 project as it was (original code and its README)
 - The capture log shows a deleted or swapped image, and its entries cannot be
   forged without the camera's key. Entries cut from the END of the log, with
   their images, leave no trace unless the latest hash is also kept elsewhere.
-  Nothing here prevents deletion; keep copies if the images matter.
+  Nothing here prevents deletion: someone with access to the disk can still
+  remove a file, and it is then reported as missing. Preventing it takes
+  storage that refuses deletes (write-once storage, or a server that deletes
+  only when shown the officers' signed record).
 - The demo keeps every key on one machine. A real deployment puts the camera
   key, the alert recipient's key and each officer's share on separate devices.
 - This is a student research project and has not had an independent security

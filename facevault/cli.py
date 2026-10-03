@@ -79,13 +79,28 @@ def _cmd_audit(args):
 def _cmd_captures(args):
     """List every image the camera locked and say whether each file is still there, unchanged."""
     log_ok, rows = pipeline.check_captures(args.keys, args.folder)
-    for entry, status in rows:
-        print(f"{entry['seq']:>3}  {entry['time']}  {', '.join(entry['actors'])}  {entry['target']:<30}  {status.upper() if status != 'ok' else 'ok'}")
+    for entry, status, deletion in rows:
+        if status == "deleted":
+            note = f"deleted by {', '.join(deletion['actors'])} on {deletion['time'][:10]}: {deletion['reason'].split(' | ', 1)[1]}"
+        else:
+            note = "ok" if status == "ok" else status.upper()
+        print(f"{entry['seq']:>3}  {entry['time']}  {', '.join(entry['actors'])}  {entry['target']:<30}  {note}")
     print("capture log: intact and signed by the camera" if log_ok else "capture log: EDITED, or holds an entry the camera did not sign")
-    problems = [status for _, status in rows if status != "ok"]
+    problems = [status for _, status, _ in rows if status in ("missing", "altered")]
     if problems:
         print(f"{problems.count('missing')} image(s) missing, {problems.count('altered')} altered")
     return 0 if log_ok and not problems else 1
+
+
+def _cmd_delete(args):
+    shares = [sharing.Share.from_json(Path(path).read_text(encoding="utf-8")) for path in args.share]
+    try:
+        record = pipeline.delete_image(args.image, shares, args.reason, args.keys)
+    except ValueError as error:
+        print(f"DENIED: {error}")
+        return 1
+    print(f"{args.image} deleted by {', '.join(record['actors'])}; the deletion is recorded and signed")
+    return 0
 
 
 def _cmd_legacy(args):
@@ -147,6 +162,13 @@ def main(argv=None):
     p.add_argument("--keys", default="keys")
     p.add_argument("--folder", default=".", help="folder holding the protected images")
     p.set_defaults(run=_cmd_captures)
+
+    p = sub.add_parser("delete", help="delete a protected image; needs every officer's share and is recorded")
+    p.add_argument("image")
+    p.add_argument("--share", action="append", required=True, help="a share file; give one for EVERY officer")
+    p.add_argument("--reason", required=True, help="why the image is being deleted (goes in the deletion record)")
+    p.add_argument("--keys", default="keys")
+    p.set_defaults(run=_cmd_delete)
 
     p = sub.add_parser("legacy", help="show why the 2024 residue scheme is not encryption")
     p.add_argument("image")

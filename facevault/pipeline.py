@@ -2,12 +2,16 @@
 
 import base64
 import hashlib
+import itertools
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import alerts, hybrid, sharing, vault
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+from . import alerts, hybrid, sharing, signing, vault
 from .audit import AuditLog
 
 VAULT_PUBLIC = "vault.pub"
@@ -18,6 +22,8 @@ RECIPIENT_PUBLIC = "alert-recipient.pub"
 SHARES_DIR = "shares"
 AUDIT_LOG = "audit.jsonl"
 CAPTURE_LOG = "capture-log.jsonl"
+DELETION_LOG = "deletion-log.jsonl"
+QUORUM_PUBLIC = "officers-signing.pub"
 
 
 def write_key(path, data):
@@ -26,6 +32,16 @@ def write_key(path, data):
 
 def read_key(path):
     return base64.b64decode(Path(path).read_text(encoding="ascii").strip())
+
+
+def officers_signing_key(vault_private):
+    """A signing key that exists only while the officers' shares are combined.
+
+    It is derived from the vault's private key, so a record signed with it
+    proves that enough officers acted together. Its public half is saved at
+    setup for anyone to check such records.
+    """
+    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"facevault/v1/officers-signing").derive(vault_private)
 
 
 def setup_keys(directory, threshold=2, officers=3):
@@ -42,6 +58,7 @@ def setup_keys(directory, threshold=2, officers=3):
 
     vault_private, vault_public = hybrid.generate_keypair()
     write_key(directory / VAULT_PUBLIC, vault_public)
+    write_key(directory / QUORUM_PUBLIC, signing.public_from_private(officers_signing_key(vault_private)))
     paths = []
     for share in sharing.split(vault_private, threshold, officers):
         path = shares_dir / f"officer-{share.index}.json"
@@ -101,24 +118,71 @@ def check_captures(keys_dir, folder):
     """Compare the capture log with the files in `folder`.
 
     Returns (log_ok, rows): log_ok is False if the log itself was edited or
-    holds an entry the camera did not sign; rows are (entry, status) with
-    status "ok", "missing" or "altered" for the newest entry of each file.
+    holds an entry the camera did not sign; rows are (entry, status, deletion)
+    for the newest entry of each file. status is "ok", "altered", "deleted"
+    (removed by the officers together; `deletion` is their record) or
+    "missing" (removed by someone else).
     """
     keys_dir, folder = Path(keys_dir), Path(folder)
     log = AuditLog(keys_dir / CAPTURE_LOG)
     log_ok, _ = log.verify(read_key(keys_dir / CAMERA_PUBLIC))
     newest = {entry["target"]: entry for entry in log.entries()}
+
+    # Deletion records count only if the whole deletion log is signed by the officers' key.
+    deletions = {}
+    deletion_log = AuditLog(keys_dir / DELETION_LOG)
+    if (keys_dir / QUORUM_PUBLIC).exists() and deletion_log.verify(read_key(keys_dir / QUORUM_PUBLIC))[0]:
+        deletions = {(record["target"], record["reason"].split(" | ")[0]): record for record in deletion_log.entries()}
+
     rows = []
     for entry in newest.values():
         path = folder / entry["target"]
+        deletion = deletions.get((entry["target"], entry["reason"]))
+        if not path.exists() and deletion is not None:
+            rows.append((entry, "deleted", deletion))
+            continue
         if not path.exists():
             status = "missing"
         elif "sha256:" + file_digest(path) != entry["reason"]:
             status = "altered"
         else:
             status = "ok"
-        rows.append((entry, status))
+        rows.append((entry, status, None))
     return log_ok, rows
+
+
+def delete_image(image_path, shares, reason, keys_dir):
+    """Delete a protected image with the agreement of ALL the officers, and record it.
+
+    Viewing needs k officers; deleting evidence is more serious, so it needs
+    every one of them. The record is signed with a key only they can rebuild
+    together. This cannot stop someone deleting the file by other means; it
+    lets `check_captures` tell an agreed deletion from an unexplained one.
+    """
+    keys_dir, image_path = Path(keys_dir), Path(image_path)
+    audit = AuditLog(keys_dir / AUDIT_LOG)
+    actors = sorted({f"officer-{share.index}" for share in shares})
+    try:
+        if not shares or len(actors) != shares[0].n:
+            raise ValueError(f"deleting needs all {shares[0].n if shares else 'the'} officers, got {len(actors)}")
+        # Every officer's share must be genuine: each group of k must rebuild the same key.
+        keys = {sharing.combine(list(group)) for group in itertools.combinations(shares, shares[0].k)}
+        if len(keys) != 1:
+            raise ValueError("the shares do not agree")
+        signing_private = officers_signing_key(keys.pop())
+        if signing.public_from_private(signing_private) != read_key(keys_dir / QUORUM_PUBLIC):
+            raise ValueError("these shares belong to a different vault")
+        if not image_path.exists():
+            raise ValueError(f"{image_path.name} does not exist")
+    except (ValueError, OSError) as error:
+        audit.append("delete-denied", actors, image_path.name, f"{reason} [{error}]")
+        raise ValueError(str(error)) from error
+
+    record = AuditLog(keys_dir / DELETION_LOG).append(
+        "delete", actors, image_path.name, f"sha256:{file_digest(image_path)} | {reason}", signing_private=signing_private)
+    image_path.unlink()
+    audit.append("delete", actors, image_path.name, reason)
+    return record
 
 
 def make_alert(outcome, protected_name):
