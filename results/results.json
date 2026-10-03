@@ -212,5 +212,98 @@
       "split_ms": 0.05980000423733145,
       "combine_ms": 0.06605000817216933
     }
+  ],
+  "obfuscation": [
+    {
+      "method": "No protection",
+      "images": 1000,
+      "people": 500,
+      "face_detected_in_hidden_region_pct": 100.0,
+      "matched_to_same_photo_pct": 100.0,
+      "matched_to_other_photo_pct": 95.8,
+      "matched_to_wrong_person_pct": 0.0,
+      "similarity_to_same_photo_mean": 0.9999999989434517,
+      "similarity_to_other_photo_mean": 0.64939588856716,
+      "similarity_to_wrong_person_mean": 0.0851292696040311,
+      "original_recoverable": null
+    },
+    {
+      "method": "Gaussian blur, 15 px",
+      "images": 1000,
+      "people": 500,
+      "face_detected_in_hidden_region_pct": 100.0,
+      "matched_to_same_photo_pct": 99.9,
+      "matched_to_other_photo_pct": 92.60000000000001,
+      "matched_to_wrong_person_pct": 0.2,
+      "similarity_to_same_photo_mean": 0.8469613166627128,
+      "similarity_to_other_photo_mean": 0.568402944423234,
+      "similarity_to_wrong_person_mean": 0.0672854462197636,
+      "original_recoverable": false
+    },
+    {
+      "method": "Gaussian blur, 45 px",
+      "images": 1000,
+      "people": 500,
+      "face_detected_in_hidden_region_pct": 96.2,
+      "matched_to_same_photo_pct": 33.900000000000006,
+      "matched_to_other_photo_pct": 11.200000000000001,
+      "matched_to_wrong_person_pct": 0.0,
+      "similarity_to_same_photo_mean": 0.31862641172096495,
+      "similarity_to_other_photo_mean": 0.22081076066943733,
+      "similarity_to_wrong_person_mean": 0.02166189342613104,
+      "original_recoverable": false
+    },
+    {
+      "method": "Pixelation, 8 px blocks",
+      "images": 1000,
+      "people": 500,
+      "face_detected_in_hidden_region_pct": 56.0,
+      "matched_to_same_photo_pct": 9.2,
+      "matched_to_other_photo_pct": 2.4,
+      "matched_to_wrong_person_pct": 0.0,
+      "similarity_to_same_photo_mean": 0.20673065863930684,
+      "similarity_to_other_photo_mean": 0.16059502848711227,
+      "similarity_to_wrong_person_mean": 0.08535698087279948,
+      "original_recoverable": false
+    },
+    {
+      "method": "Pixelation, 16 px blocks",
+      "images": 1000,
+      "people": 500,
+      "face_detected_in_hidden_region_pct": 0.0,
+      "matched_to_same_photo_pct": 0.5,
+      "matched_to_other_photo_pct": 0.0,
+      "matched_to_wrong_person_pct": 0.2,
+      "similarity_to_same_photo_mean": 0.10457476853664527,
+      "similarity_to_other_photo_mean": 0.09905384492458834,
+      "similarity_to_wrong_person_mean": 0.09166959044609546,
+      "original_recoverable": false
+    },
+    {
+      "method": "Black box",
+      "images": 1000,
+      "people": 500,
+      "face_detected_in_hidden_region_pct": 0.0,
+      "matched_to_same_photo_pct": 0.0,
+      "matched_to_other_photo_pct": 0.0,
+      "matched_to_wrong_person_pct": 0.0,
+      "similarity_to_same_photo_mean": -0.049069848405019906,
+      "similarity_to_other_photo_mean": -0.04361700114210929,
+      "similarity_to_wrong_person_mean": -0.04506824783132534,
+      "original_recoverable": false
+    },
+    {
+      "method": "FaceVault",
+      "images": 1000,
+      "people": 500,
+      "face_detected_in_hidden_region_pct": 0.0,
+      "matched_to_same_photo_pct": 0.0,
+      "matched_to_other_photo_pct": 0.0,
+      "matched_to_wrong_person_pct": 0.0,
+      "similarity_to_same_photo_mean": 0.02233503481922729,
+      "similarity_to_other_photo_mean": 0.027284548885498548,
+      "similarity_to_wrong_person_mean": 0.025818358984024185,
+      "original_recoverable": true
+    }
   ]
 }

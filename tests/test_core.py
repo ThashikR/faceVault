@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pytest
 
-from facevault import alerts, attacks, hybrid, legacy_rns, metrics, pipeline, sharing, vault
+from facevault import alerts, attacks, hybrid, legacy_rns, metrics, obfuscate, pipeline, sharing, vault
 from facevault.audit import AuditLog
 
 
@@ -133,6 +133,28 @@ def test_ciphertext_looks_random(keypair):
     protected, _ = vault.protect(flat, [(0, 0, 200, 200)], public, margin=0)
     assert metrics.entropy(protected) > 7.99
     assert abs(metrics.adjacent_correlation(protected[:, :, 0])) < 0.05
+
+
+# --- baselines: blur, pixelation, black box ----------------------------------
+
+@pytest.mark.parametrize("hide", [
+    lambda image, boxes: obfuscate.blur(image, boxes, 15),
+    lambda image, boxes: obfuscate.pixelate(image, boxes, 8),
+    obfuscate.black_box,
+])
+def test_baselines_change_only_the_boxes(image, hide):
+    hidden = hide(image, BOXES)
+    mask = np.zeros(image.shape[:2], dtype=bool)
+    for x, y, w, h in BOXES:
+        mask[y:y + h, x:x + w] = True
+        assert not np.array_equal(hidden[y:y + h, x:x + w], image[y:y + h, x:x + w])
+    assert np.array_equal(hidden[~mask], image[~mask])
+
+
+def test_pixelation_makes_flat_blocks(image):
+    x, y, w, h = 32, 24, 48, 40
+    region = obfuscate.pixelate(image, [(x, y, w, h)], 8)[y:y + h, x:x + w]
+    assert np.all(region[:8, :8] == region[0, 0])
 
 
 # --- threshold key sharing --------------------------------------------------

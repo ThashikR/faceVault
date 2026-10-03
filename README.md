@@ -89,6 +89,33 @@ tables are in [results/tables.md](results/tables.md).
 
 ![Byte histograms of a face region: original, 2024 scheme, FaceVault](results/figures/histograms.png)
 
+**Against blur and pixelation**
+
+Blurring or pixelating faces is what most systems do. The same face regions
+were hidden by each method, and a face recogniser was then given a *different*
+photo of the same person, as a watch-list would be (500 people).
+
+![The same face hidden by blur, pixelation, a black box and FaceVault](results/figures/obfuscation.png)
+
+| Method | Still recognised | Matched to a wrong person (chance) | Original recoverable |
+|---|---|---|---|
+| No protection | 95.8% | 0.0% | |
+| Gaussian blur, 15 px | 92.6% | 0.2% | no |
+| Gaussian blur, 45 px | 11.2% | 0.0% | no |
+| Pixelation, 8 px blocks | 2.4% | 0.0% | no |
+| Pixelation, 16 px blocks | 0.0% | 0.2% | no |
+| Black box | 0.0% | 0.0% | no |
+| FaceVault | 0.0% | 0.0% | yes, bit for bit |
+
+Light blur hides almost nothing from a machine, and heavy blur still lets it
+recognise one face in nine. The methods that do hide the face destroy it.
+FaceVault is the only row that hides the face and can give it back. Its
+protected faces are no more similar to the right person (mean similarity
+0.027) than to a wrong one (0.026).
+
+The recogniser here is an ordinary one that was never trained on blurred
+faces, so these figures are a lower limit on what blur and pixelation leak.
+
 Things the numbers also say, which matter as much as the good ones:
 
 - **One residue file alone does not show a face.** A detector found no face in
@@ -171,6 +198,7 @@ facevault/
   legacy_rns.py   the 2024 scheme, kept as a baseline
   attacks.py      attacks on the 2024 scheme
   metrics.py      entropy, correlation, NPCR, UACI, MSE, PSNR
+  obfuscate.py    blur, pixelation and black box, as baselines
 app.py            Streamlit demo
 experiments/      the script behind every number in this README
 tests/            pytest suite

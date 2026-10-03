@@ -44,6 +44,24 @@ Counts move by a few images between runs because the ciphertext noise is random.
 | 0.4 | 0 of 1000 (0.0%) | 0 | 1.11 | 37.8% |
 | 0.3 | 0 of 1000 (0.0%) | 0 | 1.14 | 38.2% |
 
+## Table 2c. Blur, pixelation and a black box against FaceVault
+
+The same face regions hidden by each method. The recogniser (SFace) is told exactly where the face is
+and counts a match at similarity 0.363 or above. 'Same photo': the attacker holds the unprotected
+copy of that photo (1000 images). 'Another photo': the attacker holds a different photo of the
+same person, as a watch-list would (500 people). 'Wrong person': the hidden face compared with
+someone else's photo, which shows what chance alone produces.
+
+| Method | Face detected in the hidden region | Recognised against the same photo | Recognised against another photo (mean similarity) | Matched to a wrong person (mean similarity) | Original recoverable |
+|---|---|---|---|---|---|
+| No protection | 100.0% | 100.0% | 95.8% (0.649) | 0.0% (0.085) | not needed |
+| Gaussian blur, 15 px | 100.0% | 99.9% | 92.6% (0.568) | 0.2% (0.067) | no |
+| Gaussian blur, 45 px | 96.2% | 33.9% | 11.2% (0.221) | 0.0% (0.022) | no |
+| Pixelation, 8 px blocks | 56.0% | 9.2% | 2.4% (0.161) | 0.0% (0.085) | no |
+| Pixelation, 16 px blocks | 0.0% | 0.5% | 0.0% (0.099) | 0.2% (0.092) | no |
+| Black box | 0.0% | 0.0% | 0.0% (-0.044) | 0.0% (-0.045) | no |
+| FaceVault | 0.0% | 0.0% | 0.0% (0.027) | 0.0% (0.026) | yes, bit for bit |
+
 ## Table 3. Statistics of the stored data
 
 | Data | Entropy (bits/byte) | Adjacent-pixel correlation |

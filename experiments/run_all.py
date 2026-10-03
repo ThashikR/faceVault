@@ -25,7 +25,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from facevault import attacks, detect, hybrid, legacy_rns, metrics, sharing, vault  # noqa: E402
+from facevault import attacks, detect, hybrid, legacy_rns, metrics, obfuscate, sharing, vault  # noqa: E402
 
 LFW_DIR = ROOT / "data" / "lfw_home" / "lfw_funneled"
 RESULTS = ROOT / "results"
@@ -270,6 +270,97 @@ def run_lock_threshold(paths, observer):
     return rows
 
 
+# --- 2c. blur, pixelation and a black box against FaceVault -----------------
+
+def obfuscation_methods(public):
+    """(label, function(image, boxes) -> image, can the original be recovered?)"""
+    return [
+        ("No protection", lambda image, boxes: image, None),
+        ("Gaussian blur, 15 px", lambda image, boxes: obfuscate.blur(image, boxes, 15), False),
+        ("Gaussian blur, 45 px", lambda image, boxes: obfuscate.blur(image, boxes, 45), False),
+        ("Pixelation, 8 px blocks", lambda image, boxes: obfuscate.pixelate(image, boxes, 8), False),
+        ("Pixelation, 16 px blocks", lambda image, boxes: obfuscate.pixelate(image, boxes, 16), False),
+        ("Black box", obfuscate.black_box, False),
+        ("FaceVault", lambda image, boxes: vault.protect(image, boxes, public, margin=0)[0], True),
+    ]
+
+
+def photo_pairs(all_paths, people, seed):
+    """(photo A, photo B) of the same person, for `people` randomly chosen people."""
+    by_person = {}
+    for path in all_paths:
+        by_person.setdefault(path.parent.name, []).append(path)
+    names = sorted(name for name, items in by_person.items() if len(items) >= 2)
+    rng = np.random.default_rng(seed)
+    chosen = sorted(rng.choice(len(names), size=min(people, len(names)), replace=False))
+    return [(by_person[names[i]][0], by_person[names[i]][1]) for i in chosen]
+
+
+def run_obfuscation(paths, pairs, detector, observer, matcher):
+    """Hide the same face regions with each method; ask a detector and a recogniser what is left."""
+    _, public = hybrid.generate_keypair()
+    methods = obfuscation_methods(public)
+
+    def hidden_versions(rgb, faces):
+        boxes = vault.prepare_boxes([face.box for face in faces], rgb.shape)
+        return boxes, [hide(rgb, boxes) for _, hide, _ in methods]
+
+    # Part 1: the attacker holds the very same photo, unprotected.
+    detected = [0] * len(methods)
+    same_photo = [[] for _ in methods]
+    used = 0
+    for path in paths:
+        rgb = vault.load_image(path)
+        faces = detector.detect(rgb)
+        if not faces:
+            continue
+        used += 1
+        original = matcher.embed(rgb, faces[0])
+        boxes, versions = hidden_versions(rgb, faces)
+        for index, hidden in enumerate(versions):
+            detected[index] += any(bx <= x + w / 2 <= bx + bw and by <= y + h / 2 <= by + bh
+                                   for x, y, w, h in (found.box for found in observer.detect(hidden))
+                                   for bx, by, bw, bh in boxes)
+            # The recogniser is told exactly where the face is: the strongest case for an attacker.
+            same_photo[index].append(matcher.similarity(original, matcher.embed(hidden, faces[0])))
+
+    # Part 2: the attacker holds a different photo of the same person, as a watch-list would.
+    # Matching the hidden face against a WRONG person shows what chance alone produces.
+    enrolled, probes = [], []
+    for enrolled_path, probe_path in pairs:
+        enrolled_rgb, probe_rgb = vault.load_image(enrolled_path), vault.load_image(probe_path)
+        enrolled_faces, probe_faces = detector.detect(enrolled_rgb), detector.detect(probe_rgb)
+        if enrolled_faces and probe_faces:
+            enrolled.append(matcher.embed(enrolled_rgb, enrolled_faces[0]))
+            probes.append((probe_rgb, probe_faces))
+    people = len(probes)
+    other_photo = [[] for _ in methods]
+    wrong_person = [[] for _ in methods]
+    for person, (probe_rgb, probe_faces) in enumerate(probes):
+        _, versions = hidden_versions(probe_rgb, probe_faces)
+        for index, hidden in enumerate(versions):
+            feature = matcher.embed(hidden, probe_faces[0])
+            other_photo[index].append(matcher.similarity(enrolled[person], feature))
+            wrong_person[index].append(matcher.similarity(enrolled[(person + 1) % people], feature))
+
+    def matched(scores):
+        return 100.0 * float(np.mean(np.array(scores) >= detect.MATCH_THRESHOLD))
+
+    return [{
+        "method": label,
+        "images": used,
+        "people": people,
+        "face_detected_in_hidden_region_pct": 100.0 * detected[index] / used,
+        "matched_to_same_photo_pct": matched(same_photo[index]),
+        "matched_to_other_photo_pct": matched(other_photo[index]),
+        "matched_to_wrong_person_pct": matched(wrong_person[index]),
+        "similarity_to_same_photo_mean": mean(same_photo[index]),
+        "similarity_to_other_photo_mean": mean(other_photo[index]),
+        "similarity_to_wrong_person_mean": mean(wrong_person[index]),
+        "original_recoverable": recoverable,
+    } for index, (label, _, recoverable) in enumerate(methods)]
+
+
 # --- 3. watch-list matching --------------------------------------------------
 
 def run_watchlist(all_paths, detector, matcher, people, rng):
@@ -406,6 +497,30 @@ def make_figures(results, detector):
     figure.savefig(FIGURES / "comparison.png", dpi=150)
     plt.close(figure)
 
+    # The same face hidden six ways.
+    face_box = vault.prepare_boxes([face.box for face in detector.detect(rgb)], rgb.shape)
+    x, y, w, h = face_box[0]
+    pad = 40
+    window = (slice(max(y - pad, 0), y + h + pad), slice(max(x - pad, 0), x + w + pad))
+    rows = {row["method"]: row for row in results["obfuscation"]}
+    panels = [(label, hide(rgb, face_box), rows[label]) for label, hide, _ in obfuscation_methods(public)]
+    figure, axes = plt.subplots(1, len(panels), figsize=(13.5, 3.1))
+    for axis, (label, picture, row) in zip(axes, panels):
+        axis.imshow(picture[window])
+        axis.set_title(label, fontsize=9.5)
+        axis.set_xticks([])
+        axis.set_yticks([])
+        for side in axis.spines.values():
+            side.set_visible(False)
+        if row is not None:
+            caption = [f"recognised: {row['matched_to_other_photo_pct']:.1f}%"]
+            if row["original_recoverable"] is not None:
+                caption.append(f"recoverable: {'yes' if row['original_recoverable'] else 'no'}")
+            axis.set_xlabel(chr(10).join(caption), fontsize=9, color=INK)
+    figure.tight_layout()
+    figure.savefig(FIGURES / "obfuscation.png", dpi=150)
+    plt.close(figure)
+
     # Was a face still found? One bar per kind of image.
     found = results["legacy"]["face_detected_pct"]
     bars = [
@@ -503,6 +618,22 @@ def write_tables(results):
         *[f"| {row['lock_threshold']} | {row['images_with_face_still_found']} of {results['meta']['images']} ({row['images_with_face_still_found_pct']:.1f}%) | "
           f"{row['images_with_detection_inside_a_locked_region']} | {row['regions_locked_per_image_mean']:.2f} | {row['area_locked_pct_mean']:.1f}% |" for row in results["lock_threshold"]],
         "",
+        "## Table 2c. Blur, pixelation and a black box against FaceVault",
+        "",
+        "The same face regions hidden by each method. The recogniser (SFace) is told exactly where the face is",
+        f"and counts a match at similarity {detect.MATCH_THRESHOLD} or above. 'Same photo': the attacker holds the unprotected",
+        f"copy of that photo ({results['obfuscation'][0]['images']} images). 'Another photo': the attacker holds a different photo of the",
+        f"same person, as a watch-list would ({results['obfuscation'][0]['people']} people). 'Wrong person': the hidden face compared with",
+        "someone else's photo, which shows what chance alone produces.",
+        "",
+        "| Method | Face detected in the hidden region | Recognised against the same photo | Recognised against another photo (mean similarity) | Matched to a wrong person (mean similarity) | Original recoverable |",
+        "|---|---|---|---|---|---|",
+        *[f"| {row['method']} | {row['face_detected_in_hidden_region_pct']:.1f}% | {row['matched_to_same_photo_pct']:.1f}% | "
+          f"{row['matched_to_other_photo_pct']:.1f}% ({row['similarity_to_other_photo_mean']:.3f}) | "
+          f"{row['matched_to_wrong_person_pct']:.1f}% ({row['similarity_to_wrong_person_mean']:.3f}) | "
+          f"{'not needed' if row['original_recoverable'] is None else 'yes, bit for bit' if row['original_recoverable'] else 'no'} |"
+          for row in results["obfuscation"]],
+        "",
         "## Table 3. Statistics of the stored data",
         "",
         "| Data | Entropy (bits/byte) | Adjacent-pixel correlation |",
@@ -572,6 +703,7 @@ def main():
     parser.add_argument("--images", type=int, default=1000)
     parser.add_argument("--people", type=int, default=500, help="identities in the watch-list test")
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--only", help="comma-separated steps to rerun, keeping the other saved results (e.g. obfuscation)")
     args = parser.parse_args()
 
     rng = np.random.default_rng(args.seed)
@@ -588,14 +720,22 @@ def main():
         "dataset": "LFW (funneled), random sample",
         "machine": f"{platform.processor() or platform.machine()}, Python {platform.python_version()}, OpenCV {cv2.__version__}, CPU only",
     }}
-    for name, step in (
-        ("legacy", lambda: run_legacy(paths, observer)),
-        ("facevault", lambda: run_facevault(paths, detector, observer, matcher, rng)),
-        ("lock_threshold", lambda: run_lock_threshold(paths, observer)),
-        ("watchlist", lambda: run_watchlist(all_paths, detector, matcher, args.people, rng)),
-        ("speed", lambda: run_speed(detector)),
-        ("sharing", run_sharing),
-    ):
+    steps = {
+        "legacy": lambda: run_legacy(paths, observer),
+        "facevault": lambda: run_facevault(paths, detector, observer, matcher, rng),
+        "lock_threshold": lambda: run_lock_threshold(paths, observer),
+        "obfuscation": lambda: run_obfuscation(paths, photo_pairs(all_paths, args.people, args.seed), detector, observer, matcher),
+        "watchlist": lambda: run_watchlist(all_paths, detector, matcher, args.people, rng),
+        "speed": lambda: run_speed(detector),
+        "sharing": run_sharing,
+    }
+    if args.only:
+        saved = json.loads((RESULTS / "results.json").read_text(encoding="utf-8"))
+        if (saved["meta"]["images"], saved["meta"]["seed"]) != (len(paths), args.seed):
+            sys.exit("--only needs the same --images and --seed as the saved results")
+        results = saved
+        steps = {name: steps[name] for name in args.only.split(",")}
+    for name, step in steps.items():
         start = time.perf_counter()
         results[name] = step()
         print(f"{name}: done in {time.perf_counter() - start:.0f} s", flush=True)
