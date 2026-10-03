@@ -15,6 +15,9 @@ import numpy as np
 # The moduli quoted in the report. 3 * 5 * 17 = 255, so only 0..254 fit.
 LEGACY_MODULI = (3, 5, 17)
 
+# "The first 500 pixels of the image remained unaltered" (report, chapter 7).
+UNALTERED_PIXELS = 500
+
 # A set that does cover 0..255 (7 * 8 * 9 = 504). It fixes the lost pixels,
 # but there is still no key, so it is still not encryption.
 RANGE_FIXED_MODULI = (7, 8, 9)
@@ -24,9 +27,20 @@ def pairwise_coprime(moduli):
     return all(gcd(a, b) == 1 for i, a in enumerate(moduli) for b in moduli[i + 1:])
 
 
-def encode(image, moduli=LEGACY_MODULI):
-    """Split an 8-bit image into one residue image per modulus."""
-    return [(image % m).astype(np.uint8) for m in moduli]
+def encode(image, moduli=LEGACY_MODULI, unaltered=0):
+    """Split an 8-bit image into one residue image per modulus.
+
+    `unaltered` leaves that many leading pixels as they are in every residue
+    image; the 2024 app did this for the first 500 (UNALTERED_PIXELS).
+    """
+    shares = []
+    for m in moduli:
+        share = (image % m).astype(np.uint8)
+        if unaltered:
+            pixels = share.reshape(-1, image.shape[-1])
+            pixels[:unaltered] = image.reshape(-1, image.shape[-1])[:unaltered]
+        shares.append(share)
+    return shares
 
 
 def crt(residues, moduli):

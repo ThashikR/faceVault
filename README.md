@@ -28,10 +28,11 @@ stored files give the image back to anyone, and pixel value 255 is destroyed
 on the way. The full review is in
 [docs/review-of-2024-report.md](docs/review-of-2024-report.md).
 
-The 2024 app is kept in [original-2024/](original-2024/), rebuilt from the
-project report. Its scheme is also available as a baseline inside FaceVault
-(`facevault/legacy_rns.py`), together with the attacks on it
-(`facevault/attacks.py`), so the comparison can be reproduced.
+The original 2024 code is kept unchanged in [original-2024/](original-2024/).
+Its scheme is also available as a baseline inside FaceVault
+(`facevault/legacy_rns.py`), which the tests show gives byte-identical output
+to the original, together with the attacks on it (`facevault/attacks.py`), so
+the comparison can be reproduced.
 
 ## How it works
 
@@ -54,8 +55,8 @@ project used on pixels, is used for the job it suits: sharing a key.
 
 ## Results
 
-Measured on 1,000 randomly sampled images from the public LFW face dataset, on
-a laptop CPU. Every number comes from `python experiments/run_all.py`; the full
+Measured on 1,000 randomly sampled images from the public LFW face dataset
+and on the 3,226 images of the WIDER FACE validation set, on a laptop CPU. Every number comes from `python experiments/run_all.py`; the full
 tables are in [results/tables.md](results/tables.md).
 
 **The 2024 residue scheme**
@@ -115,6 +116,29 @@ protected faces are no more similar to the right person (mean similarity
 
 The recogniser here is an ordinary one that was never trained on blurred
 faces, so these figures are a lower limit on what blur and pixelation leak.
+
+**In crowded scenes: the limit**
+
+Portraits are easy for a face detector. On the WIDER FACE validation set
+(3,226 photos of real scenes, 39,112 hand-marked faces) the lock step misses
+some faces, and a missed face is not locked. A face counts as locked when at
+least 90% of its marked box is encrypted.
+
+![Share of annotated faces locked, by face size](results/figures/crowd.png)
+
+| Face height in the image | Faces | Locked, one detection pass | Locked, two passes |
+|---|---|---|---|
+| Under 16 px | 15,266 | 41.8% | 66.5% |
+| 16 to 31 px | 11,184 | 74.9% | 84.2% |
+| 32 to 63 px | 7,553 | 85.6% | 89.9% |
+| 64 to 127 px | 3,191 | 89.1% | 92.4% |
+| 128 px and over | 1,918 | 90.5% | 93.4% |
+
+The second pass runs the detector again on the image enlarged 2x. It helps at
+every size and costs time: 206 ms per image against 41 ms. For faces 32 px and
+taller, 87.2% were locked with one pass and 91.0% with two, so in a crowd about
+one face in eleven is still not fully locked. The cipher is sound; the face
+detector is now the weak point, and a stronger detector is the next step.
 
 Things the numbers also say, which matter as much as the good ones:
 
@@ -176,12 +200,17 @@ Tests:
 pytest
 ```
 
-Reproduce the measurements (downloads the LFW dataset, about 230 MB, on first use):
+Reproduce the measurements (downloads LFW, about 230 MB, and the WIDER FACE
+validation set, about 365 MB):
 
 ```bash
 python -c "from sklearn.datasets import fetch_lfw_people; fetch_lfw_people(data_home='data', min_faces_per_person=100)"
+python scripts/fetch_wider_face.py
 python experiments/run_all.py
 ```
+
+`python experiments/run_all.py --only crowd` reruns one step and keeps the
+other saved results.
 
 ## Layout
 
@@ -203,7 +232,7 @@ app.py            Streamlit demo
 experiments/      the script behind every number in this README
 tests/            pytest suite
 docs/             technical review of the 2024 report
-original-2024/    the 2024 project as it was (reconstructed app and its README)
+original-2024/    the 2024 project as it was (original code and its README)
 ```
 
 ## Limits
@@ -230,8 +259,8 @@ original-2024/    the 2024 project as it was (reconstructed app and its README)
 Face recognition in public places is restricted or banned in many
 jurisdictions. Use this project only with images you have the right to
 process: your own, consenting participants', or public research datasets.
-The measurements here use LFW for aggregate statistics only; no LFW image is
-included in this repository.
+The measurements here use LFW and WIDER FACE for aggregate statistics only;
+no dataset image is included in this repository.
 
 ## Credits
 
@@ -243,6 +272,7 @@ included in this repository.
   no. 3, March 2024, DOI [10.55041/IJSREM29001](https://doi.org/10.55041/IJSREM29001).
 - This rebuild: Thashik R Paul, developed with AI assistance (Claude).
 - Face models: [OpenCV Zoo](https://github.com/opencv/opencv_zoo) (YuNet, SFace).
-- Dataset: Labeled Faces in the Wild, University of Massachusetts Amherst.
+- Datasets: Labeled Faces in the Wild, University of Massachusetts Amherst;
+  WIDER FACE, The Chinese University of Hong Kong.
 
 MIT licence. See [LICENSE](LICENSE).

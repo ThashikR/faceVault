@@ -28,6 +28,12 @@ def test_detector_finds_the_face(astronaut, detector):
     assert w > 50 and h > 50
 
 
+def test_enlarged_pass_reports_boxes_in_original_pixels(astronaut, detector):
+    normal = detector.detect(astronaut)[0].box
+    enlarged = detector.detect_enlarged(astronaut, 2)[0].box
+    assert all(abs(a - b) <= 12 for a, b in zip(normal, enlarged))
+
+
 def test_protected_image_hides_the_face_and_reveal_restores_it(astronaut, detector):
     private, public = hybrid.generate_keypair()
     faces = detector.detect(astronaut)

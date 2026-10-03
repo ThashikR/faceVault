@@ -28,6 +28,7 @@ sys.path.insert(0, str(ROOT))
 from facevault import attacks, detect, hybrid, legacy_rns, metrics, obfuscate, sharing, vault  # noqa: E402
 
 LFW_DIR = ROOT / "data" / "lfw_home" / "lfw_funneled"
+WIDER_DIR = ROOT / "data" / "wider_face"
 RESULTS = ROOT / "results"
 
 # Confidence at which an observer counts a detection as a face.
@@ -65,7 +66,7 @@ def run_legacy(paths, observer):
     moduli = legacy_rns.LEGACY_MODULI
     n = len(paths)
     psnrs, mses, lost = [], [], []
-    moduli_inferred = damaged = 0
+    moduli_inferred = moduli_inferred_500 = damaged = 0
     original_detected = recovered_detected = 0
     raw_detected = [0] * len(moduli)
     bright_detected = [0] * len(moduli)
@@ -93,6 +94,15 @@ def run_legacy(paths, observer):
         if inferred == moduli and np.array_equal(recovered, restored):
             moduli_inferred += 1
 
+        # The same attack on files written as the 2024 app wrote them, first 500 pixels unaltered.
+        as_app = legacy_rns.encode(rgb, unaltered=legacy_rns.UNALTERED_PIXELS)
+        try:
+            recovered_500, inferred_500 = attacks.recover_without_key(as_app)
+        except ValueError:
+            recovered_500, inferred_500 = None, None
+        if inferred_500 == moduli and np.array_equal(recovered_500, legacy_rns.decode(as_app)):
+            moduli_inferred_500 += 1
+
         original_detected += bool(observer.detect(rgb))
         recovered_detected += recovered is not None and bool(observer.detect(recovered))
         original_entropy.append(metrics.entropy(rgb))
@@ -114,6 +124,7 @@ def run_legacy(paths, observer):
         "pixel_values_lost_pct_mean": 100.0 * mean(lost),
         "pixel_values_lost_pct_max": 100.0 * max(lost),
         "keyless_recovery_success_pct": 100.0 * moduli_inferred / n,
+        "keyless_recovery_with_500_unaltered_pixels_pct": 100.0 * moduli_inferred_500 / n,
         "face_detected_pct": {
             "original": 100.0 * original_detected / n,
             "recovered_without_key": 100.0 * recovered_detected / n,
@@ -361,6 +372,111 @@ def run_obfuscation(paths, pairs, detector, observer, matcher):
     } for index, (label, _, recoverable) in enumerate(methods)]
 
 
+# --- 2d. crowded scenes: how many faces does the lock step miss? -------------
+
+CROWD_THRESHOLDS = (0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3)
+SIZE_BUCKETS = (("under 16 px", 0, 16), ("16 to 31 px", 16, 32), ("32 to 63 px", 32, 64),
+                ("64 to 127 px", 64, 128), ("128 px and over", 128, 10 ** 9))
+LOCKED, VISIBLE = 0.9, 0.1   # share of a face's annotated box that must be / must not be encrypted
+
+
+def wider_annotations():
+    """Yield (image path, [(x, y, w, h), ...]) for the WIDER FACE validation set, leaving out faces marked invalid."""
+    listing = WIDER_DIR / "wider_face_split" / "wider_face_val_bbx_gt.txt"
+    if not listing.exists():
+        sys.exit(f"WIDER FACE not found at {WIDER_DIR}. See the README for the download.")
+    lines = listing.read_text(encoding="utf-8").splitlines()
+    i = 0
+    while i < len(lines):
+        name, count = lines[i].strip(), int(lines[i + 1])
+        faces = []
+        for row in lines[i + 2:i + 2 + count]:
+            x, y, w, h, _blur, _expression, _illumination, invalid = (int(v) for v in row.split()[:8])
+            if not invalid and w > 0 and h > 0:
+                faces.append((x, y, w, h))
+        yield WIDER_DIR / "WIDER_val" / "images" / name, faces
+        i += 2 + max(count, 1)   # an image with no faces still has one placeholder row
+
+
+def run_crowd(limit=None):
+    """Lock WIDER FACE images and count the annotated faces that end up encrypted.
+
+    Detection runs once at the lowest confidence; the higher confidences are
+    the same detections filtered by score. 'two_scale' adds a second pass on
+    a copy enlarged 2x, which finds smaller faces.
+    """
+    locker = detect.FaceDetector(min(CROWD_THRESHOLDS))
+    variants = ("one_scale", "two_scale")
+    counts = {v: {t: {name: [0, 0, 0] for name, _, _ in SIZE_BUCKETS} for t in CROWD_THRESHOLDS} for v in variants}
+    area = {v: {t: [] for t in CROWD_THRESHOLDS} for v in variants}
+    regions = {v: {t: [] for t in CROWD_THRESHOLDS} for v in variants}
+    times = {v: [] for v in variants}
+    images = faces_total = 0
+
+    for path, truth in wider_annotations():
+        if limit and images >= limit:
+            break
+        rgb = vault.load_image(path)
+        height, width = rgb.shape[:2]
+        images += 1
+        faces_total += len(truth)
+
+        start = time.perf_counter()
+        first = locker.detect(rgb)
+        middle = time.perf_counter()
+        second = locker.detect_enlarged(rgb, 2)
+        end = time.perf_counter()
+        times["one_scale"].append((middle - start) * 1000.0)
+        times["two_scale"].append((end - start) * 1000.0)
+
+        for variant, found in (("one_scale", first), ("two_scale", first + second)):
+            for threshold in CROWD_THRESHOLDS:
+                boxes = vault.prepare_boxes([face.box for face in found if face.score >= threshold], rgb.shape)
+                mask = np.zeros((height, width), dtype=bool)
+                for x, y, w, h in boxes:
+                    mask[y:y + h, x:x + w] = True
+                area[variant][threshold].append(float(mask.mean()))
+                regions[variant][threshold].append(len(boxes))
+                for x, y, w, h in truth:
+                    patch = mask[max(y, 0):y + h, max(x, 0):x + w]
+                    covered = float(patch.mean()) if patch.size else 0.0
+                    bucket = next(name for name, low, high in SIZE_BUCKETS if low <= h < high)
+                    tally = counts[variant][threshold][bucket]
+                    tally[0] += 1
+                    tally[1] += covered >= LOCKED
+                    tally[2] += covered < VISIBLE
+
+    def share(tallies):
+        faces = sum(t[0] for t in tallies)
+        return {"faces": faces,
+                "locked_pct": 100.0 * sum(t[1] for t in tallies) / max(faces, 1),
+                "visible_pct": 100.0 * sum(t[2] for t in tallies) / max(faces, 1)}
+
+    def summary(variant, threshold, minimum_height=0):
+        return share([counts[variant][threshold][name] for name, low, _ in SIZE_BUCKETS if low >= minimum_height])
+
+    default = detect.LOCK_THRESHOLD
+    return {
+        "dataset": "WIDER FACE validation set",
+        "images": images,
+        "faces": faces_total,
+        "locked_means_covered_at_least": LOCKED,
+        "visible_means_covered_less_than": VISIBLE,
+        "detect_ms_median": {v: float(statistics.median(times[v])) for v in variants},
+        "by_size_at_lock_threshold": {
+            "lock_threshold": default,
+            "rows": [{"face_height": name, **{v: share([counts[v][default][name]]) for v in variants}} for name, _, _ in SIZE_BUCKETS],
+        },
+        "by_lock_threshold": [{
+            "lock_threshold": t,
+            **{v: {"all_faces": summary(v, t),
+                   "faces_32px_and_over": summary(v, t, 32),
+                   "area_locked_pct": 100.0 * mean(area[v][t]),
+                   "regions_per_image": mean(regions[v][t])} for v in variants},
+        } for t in CROWD_THRESHOLDS],
+    }
+
+
 # --- 3. watch-list matching --------------------------------------------------
 
 def run_watchlist(all_paths, detector, matcher, people, rng):
@@ -521,6 +637,31 @@ def make_figures(results, detector):
     figure.savefig(FIGURES / "obfuscation.png", dpi=150)
     plt.close(figure)
 
+    # Crowded scenes: share of faces locked, by face size.
+    if results.get("crowd"):
+        rows = results["crowd"]["by_size_at_lock_threshold"]["rows"]
+        figure, axis = plt.subplots(figsize=(8.2, 3.8))
+        positions = np.arange(len(rows))
+        for offset, key, colour, label in ((-0.2, "one_scale", BLUE, "One detection pass"), (0.2, "two_scale", ORANGE, "Two passes (adds 2x enlarged)")):
+            values = [row[key]["locked_pct"] for row in rows]
+            axis.bar(positions + offset, values, width=0.36, color=colour, label=label)
+            for position, value in zip(positions + offset, values):
+                axis.text(position, value + 1.5, f"{value:.0f}%", ha="center", color=INK, fontsize=9)
+        axis.set_xticks(positions, [row["face_height"] + chr(10) + f"({row['one_scale']['faces']} faces)" for row in rows])
+        axis.tick_params(axis="x", length=0, labelcolor=INK)
+        axis.set_ylim(0, 118)
+        axis.set_yticks([0, 25, 50, 75, 100])
+        axis.set_ylabel("Annotated faces locked (%)")
+        axis.set_xlabel("Face height in the image")
+        axis.yaxis.grid(True, color="#e6e5e1", linewidth=0.8)
+        axis.set_axisbelow(True)
+        axis.legend(frameon=False, loc="upper left", ncols=2)
+        for side in ("top", "right", "left"):
+            axis.spines[side].set_visible(False)
+        figure.tight_layout()
+        figure.savefig(FIGURES / "crowd.png", dpi=150)
+        plt.close(figure)
+
     # Was a face still found? One bar per kind of image.
     found = results["legacy"]["face_detected_pct"]
     bars = [
@@ -573,6 +714,36 @@ def make_figures(results, detector):
 
 # --- tables ------------------------------------------------------------------
 
+def crowd_tables(results):
+    crowd = results.get("crowd")
+    if not crowd:
+        return []
+    by_size = crowd["by_size_at_lock_threshold"]
+    return [
+        "## Table 2d. Crowded scenes: faces the lock step reaches",
+        "",
+        f"{crowd['dataset']}: {crowd['images']} images, {crowd['faces']} annotated faces (faces marked invalid left out).",
+        f"A face counts as locked when at least {crowd['locked_means_covered_at_least']:.0%} of its annotated box is encrypted,",
+        f"and as visible when less than {crowd['visible_means_covered_less_than']:.0%} is. 'Two passes' adds a detection pass on the image enlarged 2x.",
+        f"Median detection time per image: {crowd['detect_ms_median']['one_scale']:.0f} ms for one pass, {crowd['detect_ms_median']['two_scale']:.0f} ms for two.",
+        "",
+        f"By face size, at lock confidence {by_size['lock_threshold']}:",
+        "",
+        "| Face height | Faces | Locked, one pass | Visible, one pass | Locked, two passes | Visible, two passes |",
+        "|---|---|---|---|---|---|",
+        *[f"| {row['face_height']} | {row['one_scale']['faces']} | {row['one_scale']['locked_pct']:.1f}% | {row['one_scale']['visible_pct']:.1f}% | "
+          f"{row['two_scale']['locked_pct']:.1f}% | {row['two_scale']['visible_pct']:.1f}% |" for row in by_size["rows"]],
+        "",
+        "By lock confidence, faces 32 px and taller:",
+        "",
+        "| Lock confidence | Locked, one pass | Locked, two passes | Image area locked, one pass | Image area locked, two passes |",
+        "|---|---|---|---|---|",
+        *[f"| {row['lock_threshold']} | {row['one_scale']['faces_32px_and_over']['locked_pct']:.1f}% | {row['two_scale']['faces_32px_and_over']['locked_pct']:.1f}% | "
+          f"{row['one_scale']['area_locked_pct']:.1f}% | {row['two_scale']['area_locked_pct']:.1f}% |" for row in crowd["by_lock_threshold"]],
+        "",
+    ]
+
+
 def write_tables(results):
     legacy, fv, wl = results["legacy"], results["facevault"], results["watchlist"]
     found = legacy["face_detected_pct"]
@@ -587,6 +758,7 @@ def write_tables(results):
         "| Measurement | Value |",
         "|---|---|",
         f"| Images rebuilt with no key, from the stored files alone | {legacy['keyless_recovery_success_pct']:.1f}% |",
+        f"| The same, with the first 500 pixels left unaltered as the 2024 app did | {legacy['keyless_recovery_with_500_unaltered_pixels_pct']:.1f}% |",
         f"| Images damaged by its own decryption | {legacy['images_damaged_by_round_trip_pct']:.1f}% |",
         f"| Mean MSE after decryption (a cipher must give 0) | {legacy['round_trip_mse_mean']:.2f} |",
         f"| Mean PSNR over the damaged images | {legacy['round_trip_psnr_db_mean_over_damaged_images']:.2f} dB |",
@@ -634,6 +806,7 @@ def write_tables(results):
           f"{'not needed' if row['original_recoverable'] is None else 'yes, bit for bit' if row['original_recoverable'] else 'no'} |"
           for row in results["obfuscation"]],
         "",
+        *crowd_tables(results),
         "## Table 3. Statistics of the stored data",
         "",
         "| Data | Entropy (bits/byte) | Adjacent-pixel correlation |",
@@ -703,6 +876,7 @@ def main():
     parser.add_argument("--images", type=int, default=1000)
     parser.add_argument("--people", type=int, default=500, help="identities in the watch-list test")
     parser.add_argument("--seed", type=int, default=2026)
+    parser.add_argument("--crowd-images", type=int, help="use only the first N WIDER FACE images (for a quick check)")
     parser.add_argument("--only", help="comma-separated steps to rerun, keeping the other saved results (e.g. obfuscation)")
     args = parser.parse_args()
 
@@ -725,10 +899,14 @@ def main():
         "facevault": lambda: run_facevault(paths, detector, observer, matcher, rng),
         "lock_threshold": lambda: run_lock_threshold(paths, observer),
         "obfuscation": lambda: run_obfuscation(paths, photo_pairs(all_paths, args.people, args.seed), detector, observer, matcher),
+        "crowd": lambda: run_crowd(args.crowd_images),
         "watchlist": lambda: run_watchlist(all_paths, detector, matcher, args.people, rng),
         "speed": lambda: run_speed(detector),
         "sharing": run_sharing,
     }
+    if not args.only and not (WIDER_DIR / "wider_face_split").exists():
+        print("WIDER FACE not downloaded: skipping the crowd step")
+        del steps["crowd"]
     if args.only:
         saved = json.loads((RESULTS / "results.json").read_text(encoding="utf-8"))
         if (saved["meta"]["images"], saved["meta"]["seed"]) != (len(paths), args.seed):

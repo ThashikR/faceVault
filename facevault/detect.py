@@ -54,6 +54,16 @@ class FaceDetector:
         faces = [Face(tuple(int(round(v)) for v in row[:4]), float(row[-1]), row) for row in rows]
         return sorted(faces, key=lambda face: face.score, reverse=True)
 
+    def detect_enlarged(self, rgb, scale=2):
+        """Detect on an enlarged copy, which finds smaller faces. Boxes come back in original pixels."""
+        enlarged = cv2.resize(rgb, None, fx=scale, fy=scale, interpolation=cv2.INTER_LINEAR)
+        faces = []
+        for face in self.detect(enlarged):
+            row = face.row.copy()
+            row[:14] /= scale
+            faces.append(Face(tuple(int(round(v / scale)) for v in face.box), face.score, row))
+        return faces
+
 
 class FaceMatcher:
     def __init__(self):

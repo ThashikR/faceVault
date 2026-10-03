@@ -5,7 +5,6 @@ to its rebuild, [FaceVault](../README.md).
 
 - **When:** 2023-24, B.E. project, Dept. of CSE (AI & ML), Vidyavardhaka
   College of Engineering, Mysuru
-- **App name on screen:** *Surveillance System for Criminal Detection*
 - **Built with:** Python, Streamlit, the `face_recognition` library (dlib),
   NumPy, Pillow
 
@@ -35,8 +34,9 @@ holds.
                    Discard   Encrypt      Theorem)
 ```
 
-1. **Training images.** A folder with one photo per known person. Each face is
-   turned into an encoding and the encodings are saved to a file.
+1. **Training images.** A folder of photos of known people. Each face is
+   turned into an encoding and the encodings are saved to
+   `stored_face_data.pkl`.
 2. **Test images.** Every face in each test image is compared with the known
    encodings. The app lists who was found.
 3. **Encryption.** An image containing a known face is written out as three
@@ -51,33 +51,53 @@ holds.
 The project report gave one measurement, for one image: mean squared error
 13.56 and PSNR 36.81 dB between the original and the decrypted image.
 
-## About this code
+## The files
 
-**This is a reconstruction.** The original source files were not kept.
-`app.py` was rebuilt in 2026 from the pseudo-code, the results chapter and the
-screenshots in the project report. Function names, screen text, folder and
-file names, the moduli and the 500-pixel rule follow the report. Two things
-are known to differ: NumPy is used where the report describes pixel-by-pixel
-loops, and the decorative background image is left out.
+These are the original 2024 files, unchanged.
 
-What has been checked:
+| File | Date | What it is |
+|---|---|---|
+| `my_app.py` | 20 Apr 2024 | The Streamlit app: training, face matching, encryption, decryption |
+| `development/0_RNS.ipynb` | 26 Feb 2024 | First experiment with residues on a greyscale image |
+| `development/1_rns00.py` | 30 Mar 2024 | Residues modulo 3, 5, 17 on the raw bytes of a BMP file |
+| `development/2_crt00.py` | 30 Mar 2024 | The matching decryption |
+| `development/3_test2_RNS.ipynb` | 31 Mar 2024 | The move from BMP bytes to image pixels, and the CRT functions the app uses |
+| `development/4_check_and_delete.ipynb` | 18 Apr 2024 | Face matching joined to the encryption |
+| `development/5_send.ipynb` | 13 Aug 2024 | The whole pipeline in two cells, without the screens |
 
-| Part | Status |
-|---|---|
-| Encryption and decryption functions | Tested (`tests/test_original_2024.py`) |
-| Decryption screen | Tested with Streamlit's test runner |
-| Face matching and the Encryption screen | **Not run.** They need dlib, which was not installed when this was rebuilt |
+The file names in `development/` have a number added in front to show the
+order. Python files are byte-for-byte copies. In the notebooks the code cells
+are untouched and the saved outputs have been removed, because the outputs
+list the people in the test photographs.
+
+`1_rns00.py` appears to be where the 500 rule comes from: it works on the raw
+bytes of a BMP file and leaves the first 500 bytes alone, which keeps the file
+header intact so the result still opens as an image. Later versions carried
+the same rule over to pixels.
+
+The version shown in the project report's screenshots had a sidebar and the
+longer title *Surveillance System for Criminal Detection*. That later file was
+not found; `my_app.py` is the latest version that was.
 
 ## Run it
 
 ```bash
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run my_app.py
 ```
 
-`face_recognition` installs dlib, which is compiled during installation. On
-Windows that needs CMake and the Visual Studio C++ build tools. Decryption
-works without it.
+`face_recognition` needs dlib. On Windows, install a prebuilt dlib wheel that
+matches your Python version first, or have CMake and the Visual Studio C++
+build tools so that pip can compile it. `os.startfile`, used by the "Open
+folder" buttons, exists only on Windows.
+
+## What has been checked
+
+| Part | Status |
+|---|---|
+| Encryption and decryption functions of `my_app.py` | Run unchanged by `tests/test_original_2024.py` |
+| FaceVault's stand-in for this scheme (`facevault/legacy_rns.py`) | Shown by the same tests to give byte-identical output |
+| Face matching and the app's screens | **Not run** for this repository, because dlib was not installed |
 
 ## Known weaknesses
 
@@ -86,7 +106,7 @@ A later review found that this scheme does not protect the images:
 - There is no key. Anyone holding the three encrypted images can rebuild the
   picture, and the moduli can be read off the files.
 - 3 × 5 × 17 = 255, so pixel value 255 cannot be stored and comes back as 0.
-  That is where the reported error of 13.56 comes from.
+  That explains the reported error of 13.56.
 - Alerts, access control and real-time detection, which the title and design
   describe, were not built.
 
@@ -97,5 +117,6 @@ folder's code to protect real images.
 
 ## Not included
 
-The college project report and its test photographs are not published here,
-because they contain other people's photographs and personal details.
+The college project report and the training and test photographs are not
+published here, because they contain other people's photographs and personal
+details.

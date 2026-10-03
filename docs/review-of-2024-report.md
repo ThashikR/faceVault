@@ -4,7 +4,7 @@ Report reviewed: *Advanced Surveillance System with Encrypted Alerts and Privacy
 Enhancement*, B.E. project report, Dept. of CSE (AI & ML), Vidyavardhaka College
 of Engineering, 2023-24 (five authors, one guide).
 
-The 2024 app, rebuilt from that report, is in [original-2024/](../original-2024/).
+The original 2024 code is in [original-2024/](../original-2024/).
 
 This review is the reason FaceVault exists. Page numbers are the report's own.
 Where a claim below is a measurement, the number is in

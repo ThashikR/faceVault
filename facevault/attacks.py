@@ -6,14 +6,24 @@ import numpy as np
 
 from . import legacy_rns
 
+# A value must make up at least this share of a file to count as a residue.
+# It ignores the few hundred pixels the 2024 app left unaltered at the start of each file.
+_COMMON = 0.01
+
 
 def infer_moduli(shares):
     """Read each modulus straight off its residue image.
 
-    Residues mod m take the values 0 .. m-1, so on any natural image the
-    largest value seen is m-1. Keeping the moduli secret therefore does not help.
+    Residues mod m take the values 0 .. m-1, and on a natural image each of
+    them is common. The modulus is the largest common value plus one, so
+    keeping the moduli secret does not help.
     """
-    return tuple(int(share.max()) + 1 for share in shares)
+    moduli = []
+    for share in shares:
+        counts = np.bincount(share.ravel(), minlength=256)
+        common = np.flatnonzero(counts >= _COMMON * share.size)
+        moduli.append(int(common.max()) + 1)
+    return tuple(moduli)
 
 
 def recover_without_key(shares):

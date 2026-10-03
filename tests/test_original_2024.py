@@ -1,24 +1,39 @@
-"""The reconstructed 2024 app: its encryption and decryption behave as the report describes.
+"""The original 2024 code (original-2024/my_app.py), run exactly as written.
 
-The face-matching functions need dlib and are not exercised here.
+my_app.py imports face_recognition at the top, which needs dlib, so it cannot
+be imported here. Its encryption and decryption functions do not use
+face_recognition, so they are lifted out of the file unchanged and run.
 """
 
-import importlib.util
+import ast
+import os
 from pathlib import Path
 
 import numpy as np
 import pytest
 from PIL import Image
 
-APP = Path(__file__).resolve().parent.parent / "original-2024" / "app.py"
+from facevault import attacks, legacy_rns
+
+APP = Path(__file__).resolve().parent.parent / "original-2024" / "my_app.py"
+WANTED = {"multiplicative_inverse", "crt", "decrypt_image", "decrypt_folder_for_filename", "encrypt_image"}
+
+
+class _Screen:
+    """Stands in for Streamlit: the original functions report success through st."""
+
+    def __getattr__(self, name):
+        return lambda *args, **kwargs: None
 
 
 @pytest.fixture(scope="module")
-def app():
-    spec = importlib.util.spec_from_file_location("original_2024_app", APP)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)   # main() does not run: the module is not __main__
-    return module
+def original():
+    tree = ast.parse(APP.read_text(encoding="utf-8"))
+    functions = [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name in WANTED]
+    assert {f.name for f in functions} == WANTED
+    namespace = {"os": os, "np": np, "Image": Image, "st": _Screen()}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), str(APP), "exec"), namespace)
+    return namespace
 
 
 @pytest.fixture
@@ -31,53 +46,49 @@ def photo(tmp_path):
     return path, pixels
 
 
-def test_multiplicative_inverse(app):
-    assert (85 * app.multiplicative_inverse(85, 3)) % 3 == 1
-    assert (15 * app.multiplicative_inverse(15, 17)) % 17 == 1
+def _files(folder):
+    return [np.array(Image.open(folder / f"encrypted_{k}.png")) for k in range(3)]
 
 
-def test_encrypt_writes_three_images_in_a_folder_named_after_the_image(app, photo, tmp_path):
-    path, _ = photo
-    written = app.encrypt_image(path, tmp_path / "output_folder")
-    assert [p.name for p in written] == ["encrypted_0.png", "encrypted_1.png", "encrypted_2.png"]
-    assert all(p.parent == tmp_path / "output_folder" / "grp-2" for p in written)
-
-
-def test_first_500_pixels_are_left_unaltered(app, photo, tmp_path):
+def test_original_encryption_writes_three_residue_images(original, photo, tmp_path):
     path, pixels = photo
+    out = tmp_path / "output_folder" / "grp-2"
+    original["encrypt_image"](str(path), str(out))
     flat = pixels.reshape(-1, 3)
-    for index, encrypted_path in enumerate(app.encrypt_image(path, tmp_path / "out")):
-        encrypted = np.array(Image.open(encrypted_path)).reshape(-1, 3)
-        assert np.array_equal(encrypted[:500], flat[:500])
-        assert encrypted[500:].max() < app.MODULI[index]
+    for file, modulus in zip(_files(out), (3, 5, 17)):
+        stored = file.reshape(-1, 3)
+        assert np.array_equal(stored[:500], flat[:500])          # the first 500 pixels are unaltered
+        assert np.array_equal(stored[500:], flat[500:] % modulus)
 
 
-def test_decryption_restores_everything_except_white(app, photo, tmp_path):
+def test_original_decryption_restores_everything_except_white(original, photo, tmp_path):
     path, pixels = photo
-    app.encrypt_image(path, tmp_path / "out")
-    decrypted_path = app.decrypt_folder_for_filename(tmp_path / "out", "grp-2")
-    assert decrypted_path.name == "decrypted_image.png"
-    decrypted = np.array(Image.open(decrypted_path))
+    original["encrypt_image"](str(path), str(tmp_path / "output_folder" / "grp-2"))
+    original["decrypt_folder_for_filename"](str(tmp_path / "output_folder"), "grp-2")
+    decrypted = np.array(Image.open(tmp_path / "output_folder" / "grp-2" / "decrypted_image.png"))
     white = pixels == 255
     assert np.array_equal(decrypted[~white], pixels[~white])
     assert np.all(decrypted[white] == 0)   # the defect behind Fig 7.1.6 of the report
 
 
-def test_app_decryption_screen(app, photo, tmp_path):
-    from streamlit.testing.v1 import AppTest
+def test_the_baseline_used_in_the_experiments_matches_the_original_code(original, photo, tmp_path):
+    """facevault/legacy_rns.py must behave exactly like the 2024 code it stands in for."""
+    path, pixels = photo
+    out = tmp_path / "output_folder" / "grp-2"
+    original["encrypt_image"](str(path), str(out))
+    original["decrypt_folder_for_filename"](str(tmp_path / "output_folder"), "grp-2")
 
+    ours = legacy_rns.encode(pixels, unaltered=legacy_rns.UNALTERED_PIXELS)
+    for theirs, mine in zip(_files(out), ours):
+        assert np.array_equal(theirs, mine)
+    assert np.array_equal(np.array(Image.open(out / "decrypted_image.png")), legacy_rns.decode(ours))
+
+
+def test_the_attack_rebuilds_the_original_output_without_knowing_the_moduli(original, photo, tmp_path):
     path, _ = photo
-    out = tmp_path / "out"
-    app.encrypt_image(path, out)
-
-    screen = AppTest.from_file(str(APP), default_timeout=30).run()
-    assert not screen.exception
-    assert screen.title[0].value == "Surveillance System for Criminal Detection"
-
-    screen.sidebar.radio[0].set_value("Decryption").run()
-    screen.text_input[0].set_value(str(out))
-    screen.text_input[1].set_value("grp-2")
-    screen.button[0].click().run()
-    assert not screen.exception
-    assert screen.success[0].value.startswith("Decryption successful")
-    assert (out / "grp-2" / "decrypted_image.png").exists()
+    out = tmp_path / "output_folder" / "grp-2"
+    original["encrypt_image"](str(path), str(out))
+    recovered, moduli = attacks.recover_without_key(_files(out))
+    assert moduli == (3, 5, 17)
+    original["decrypt_folder_for_filename"](str(tmp_path / "output_folder"), "grp-2")
+    assert np.array_equal(recovered, np.array(Image.open(out / "decrypted_image.png")))

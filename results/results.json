@@ -19,6 +19,7 @@
     "pixel_values_lost_pct_mean": 0.37581333333333333,
     "pixel_values_lost_pct_max": 20.050133333333335,
     "keyless_recovery_success_pct": 100.0,
+    "keyless_recovery_with_500_unaltered_pixels_pct": 100.0,
     "face_detected_pct": {
       "original": 100.0,
       "recovered_without_key": 100.0,
@@ -305,5 +306,305 @@
       "similarity_to_wrong_person_mean": 0.025818358984024185,
       "original_recoverable": true
     }
-  ]
+  ],
+  "crowd": {
+    "dataset": "WIDER FACE validation set",
+    "images": 3226,
+    "faces": 39112,
+    "locked_means_covered_at_least": 0.9,
+    "visible_means_covered_less_than": 0.1,
+    "detect_ms_median": {
+      "one_scale": 41.472249999060296,
+      "two_scale": 205.7207999896491
+    },
+    "by_size_at_lock_threshold": {
+      "lock_threshold": 0.5,
+      "rows": [
+        {
+          "face_height": "under 16 px",
+          "one_scale": {
+            "faces": 15266,
+            "locked_pct": 41.785667496397224,
+            "visible_pct": 48.02829817895978
+          },
+          "two_scale": {
+            "faces": 15266,
+            "locked_pct": 66.50072055548277,
+            "visible_pct": 26.752259924014147
+          }
+        },
+        {
+          "face_height": "16 to 31 px",
+          "one_scale": {
+            "faces": 11184,
+            "locked_pct": 74.88376251788269,
+            "visible_pct": 16.702432045779684
+          },
+          "two_scale": {
+            "faces": 11184,
+            "locked_pct": 84.23640915593705,
+            "visible_pct": 10.300429184549357
+          }
+        },
+        {
+          "face_height": "32 to 63 px",
+          "one_scale": {
+            "faces": 7553,
+            "locked_pct": 85.59512776380247,
+            "visible_pct": 8.777969018932874
+          },
+          "two_scale": {
+            "faces": 7553,
+            "locked_pct": 89.8583344366477,
+            "visible_pct": 6.0108566132662515
+          }
+        },
+        {
+          "face_height": "64 to 127 px",
+          "one_scale": {
+            "faces": 3191,
+            "locked_pct": 89.0629896584143,
+            "visible_pct": 5.672203071137575
+          },
+          "two_scale": {
+            "faces": 3191,
+            "locked_pct": 92.35349420244438,
+            "visible_pct": 4.011281729865246
+          }
+        },
+        {
+          "face_height": "128 px and over",
+          "one_scale": {
+            "faces": 1918,
+            "locked_pct": 90.45881126173097,
+            "visible_pct": 4.014598540145985
+          },
+          "two_scale": {
+            "faces": 1918,
+            "locked_pct": 93.37851929092805,
+            "visible_pct": 2.815432742440042
+          }
+        }
+      ]
+    },
+    "by_lock_threshold": [
+      {
+        "lock_threshold": 0.9,
+        "one_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 16.91552464716711,
+            "visible_pct": 81.49161382695848
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 47.441162533565,
+            "visible_pct": 49.06807771284157
+          },
+          "area_locked_pct": 4.106079733359951,
+          "regions_per_image": 1.8713577185368877
+        },
+        "two_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 23.65258744119452,
+            "visible_pct": 74.041214972387
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 55.22034433738746,
+            "visible_pct": 40.933501816458694
+          },
+          "area_locked_pct": 4.512533454593589,
+          "regions_per_image": 2.5145691258524487
+        }
+      },
+      {
+        "lock_threshold": 0.8,
+        "one_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 40.62436080998159,
+            "visible_pct": 55.72458580486807
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 77.3258568946454,
+            "visible_pct": 18.267256357605433
+          },
+          "area_locked_pct": 6.501069786294813,
+          "regions_per_image": 4.108183508989461
+        },
+        "two_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 55.144201268153,
+            "visible_pct": 40.56044180814072
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 80.8324119412415,
+            "visible_pct": 15.210867161585847
+          },
+          "area_locked_pct": 7.026134036633517,
+          "regions_per_image": 5.166769993800372
+        }
+      },
+      {
+        "lock_threshold": 0.7,
+        "one_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 53.33401513601964,
+            "visible_pct": 41.37093475148292
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 82.4988153530248,
+            "visible_pct": 12.438793239614595
+          },
+          "area_locked_pct": 7.203115397819442,
+          "regions_per_image": 5.282393056416615
+        },
+        "two_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 68.602986295766,
+            "visible_pct": 26.36275311924729
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 85.84741746959406,
+            "visible_pct": 9.887853419680935
+          },
+          "area_locked_pct": 7.9990279740657435,
+          "regions_per_image": 6.187848729076255
+        }
+      },
+      {
+        "lock_threshold": 0.6,
+        "one_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 60.63100838617304,
+            "visible_pct": 32.470852935160565
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 85.23140104248934,
+            "visible_pct": 9.342915811088295
+          },
+          "area_locked_pct": 7.838879700081587,
+          "regions_per_image": 6.143521388716677
+        },
+        "two_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 74.92841071793823,
+            "visible_pct": 19.73563100838617
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 88.71426314958143,
+            "visible_pct": 7.005212446690886
+          },
+          "area_locked_pct": 9.231462150885381,
+          "regions_per_image": 6.88034717916925
+        }
+      },
+      {
+        "lock_threshold": 0.5,
+        "one_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 65.95418285948047,
+            "visible_pct": 25.876968705256697
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 87.20581266782499,
+            "visible_pct": 7.273732427736535
+          },
+          "area_locked_pct": 8.511782599830939,
+          "regions_per_image": 6.849349039057657
+        },
+        "two_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 79.51012476989159,
+            "visible_pct": 15.0132951523829
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 91.02037592797346,
+            "visible_pct": 5.0229031748538935
+          },
+          "area_locked_pct": 11.38866885430982,
+          "regions_per_image": 7.70272783632982
+        }
+      },
+      {
+        "lock_threshold": 0.4,
+        "one_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 71.7938228676621,
+            "visible_pct": 19.595009204336264
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 88.82483020060022,
+            "visible_pct": 5.717896066972043
+          },
+          "area_locked_pct": 9.54674954567553,
+          "regions_per_image": 7.362988220706757
+        },
+        "two_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 83.54980568623441,
+            "visible_pct": 11.093781959500921
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 92.70257463275944,
+            "visible_pct": 3.656610330121624
+          },
+          "area_locked_pct": 15.91076181055911,
+          "regions_per_image": 8.493490390576566
+        }
+      },
+      {
+        "lock_threshold": 0.3,
+        "one_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 77.02239721824505,
+            "visible_pct": 14.547964818981386
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 90.53861949139157,
+            "visible_pct": 4.1304691202021795
+          },
+          "area_locked_pct": 11.45511090877848,
+          "regions_per_image": 8.203967761934283
+        },
+        "two_scale": {
+          "all_faces": {
+            "faces": 39112,
+            "locked_pct": 88.16987113929228,
+            "visible_pct": 7.332787891184291
+          },
+          "faces_32px_and_over": {
+            "faces": 12662,
+            "locked_pct": 94.77175801611119,
+            "visible_pct": 2.2587268993839835
+          },
+          "area_locked_pct": 24.645766786108993,
+          "regions_per_image": 9.133292002479852
+        }
+      }
+    ]
+  }
 }

@@ -1,5 +1,7 @@
 streamlit
 numpy
 Pillow
-# Needs dlib, which is compiled on install: CMake and a C++ compiler must be present.
+opencv-python
+# Needs dlib. On Windows, install a prebuilt dlib wheel for your Python version
+# first, or have CMake and the Visual Studio C++ build tools so pip can compile it.
 face_recognition
