@@ -17,7 +17,8 @@ def _cmd_setup(args):
     print(f"Any {args.threshold} of these {args.officers} share files can unlock faces:")
     for path in paths:
         print(f"  {path}")
-    print("Give each file to a different person. The full private key was not saved anywhere.")
+    print("Each officer also gets officer-N.delete.json; deleting an image needs ALL of those.")
+    print("Give each officer's files to a different person. No full private key was saved anywhere.")
 
 
 def _cmd_protect(args):
@@ -165,7 +166,7 @@ def main(argv=None):
 
     p = sub.add_parser("delete", help="delete a protected image; needs every officer's share and is recorded")
     p.add_argument("image")
-    p.add_argument("--share", action="append", required=True, help="a share file; give one for EVERY officer")
+    p.add_argument("--share", action="append", required=True, help="a deletion share (officer-N.delete.json); give EVERY officer's")
     p.add_argument("--reason", required=True, help="why the image is being deleted (goes in the deletion record)")
     p.add_argument("--keys", default="keys")
     p.set_defaults(run=_cmd_delete)

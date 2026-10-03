@@ -2,14 +2,10 @@
 
 import base64
 import hashlib
-import itertools
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from . import alerts, hybrid, sharing, signing, vault
 from .audit import AuditLog
@@ -34,16 +30,6 @@ def read_key(path):
     return base64.b64decode(Path(path).read_text(encoding="ascii").strip())
 
 
-def officers_signing_key(vault_private):
-    """A signing key that exists only while the officers' shares are combined.
-
-    It is derived from the vault's private key, so a record signed with it
-    proves that enough officers acted together. Its public half is saved at
-    setup for anyone to check such records.
-    """
-    return HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=b"facevault/v1/officers-signing").derive(vault_private)
-
-
 def setup_keys(directory, threshold=2, officers=3):
     """Create every key the system needs. Returns the list of share files written.
 
@@ -58,12 +44,19 @@ def setup_keys(directory, threshold=2, officers=3):
 
     vault_private, vault_public = hybrid.generate_keypair()
     write_key(directory / VAULT_PUBLIC, vault_public)
-    write_key(directory / QUORUM_PUBLIC, signing.public_from_private(officers_signing_key(vault_private)))
     paths = []
     for share in sharing.split(vault_private, threshold, officers):
         path = shares_dir / f"officer-{share.index}.json"
         path.write_text(share.to_json(), encoding="utf-8")
         paths.append(path)
+
+    # Deleting evidence is more serious than viewing it, so it has its own key,
+    # split so that EVERY officer's share is needed. Like the vault key, it is
+    # never stored whole.
+    deletion_private, deletion_public = alerts.generate_signing_keypair()
+    write_key(directory / QUORUM_PUBLIC, deletion_public)
+    for share in sharing.split(deletion_private, officers, officers):
+        (shares_dir / f"officer-{share.index}.delete.json").write_text(share.to_json(), encoding="utf-8")
 
     camera_private, camera_public = alerts.generate_signing_keypair()
     write_key(directory / CAMERA_KEY, camera_private)
@@ -151,27 +144,22 @@ def check_captures(keys_dir, folder):
     return log_ok, rows
 
 
-def delete_image(image_path, shares, reason, keys_dir):
+def delete_image(image_path, delete_shares, reason, keys_dir):
     """Delete a protected image with the agreement of ALL the officers, and record it.
 
-    Viewing needs k officers; deleting evidence is more serious, so it needs
-    every one of them. The record is signed with a key only they can rebuild
-    together. This cannot stop someone deleting the file by other means; it
-    lets `check_captures` tell an agreed deletion from an unexplained one.
+    Viewing needs k officers; deleting needs every one of them. `delete_shares`
+    are the officers' deletion shares (officer-N.delete.json), which rebuild a
+    signing key only when all are present. The record is signed with that key.
+    This cannot stop someone deleting the file by other means; it lets
+    `check_captures` tell an agreed deletion from an unexplained one.
     """
     keys_dir, image_path = Path(keys_dir), Path(image_path)
     audit = AuditLog(keys_dir / AUDIT_LOG)
-    actors = sorted({f"officer-{share.index}" for share in shares})
+    actors = sorted({f"officer-{share.index}" for share in delete_shares})
     try:
-        if not shares or len(actors) != shares[0].n:
-            raise ValueError(f"deleting needs all {shares[0].n if shares else 'the'} officers, got {len(actors)}")
-        # Every officer's share must be genuine: each group of k must rebuild the same key.
-        keys = {sharing.combine(list(group)) for group in itertools.combinations(shares, shares[0].k)}
-        if len(keys) != 1:
-            raise ValueError("the shares do not agree")
-        signing_private = officers_signing_key(keys.pop())
+        signing_private = sharing.combine(delete_shares)
         if signing.public_from_private(signing_private) != read_key(keys_dir / QUORUM_PUBLIC):
-            raise ValueError("these shares belong to a different vault")
+            raise ValueError("these are not this vault's deletion shares")
         if not image_path.exists():
             raise ValueError(f"{image_path.name} does not exist")
     except (ValueError, OSError) as error:

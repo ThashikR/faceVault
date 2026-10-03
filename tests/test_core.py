@@ -6,7 +6,7 @@ import json
 import numpy as np
 import pytest
 
-from facevault import alerts, attacks, hybrid, legacy_rns, metrics, obfuscate, pipeline, sharing, vault
+from facevault import alerts, attacks, hybrid, legacy_rns, metrics, obfuscate, pipeline, sharing, signing, vault
 from facevault.audit import AuditLog
 
 
@@ -236,9 +236,10 @@ def test_capture_log_cannot_be_rewritten_without_the_camera_key(image, tmp_path)
 
 @pytest.fixture
 def stored(image, tmp_path):
-    """A vault with three officers and two captured images."""
+    """A vault with three officers and two captured images. Returns the officers' deletion shares."""
     keys, store = tmp_path / "keys", tmp_path / "store"
-    share_paths = pipeline.setup_keys(keys, threshold=2, officers=3)
+    pipeline.setup_keys(keys, threshold=2, officers=3)
+    share_paths = sorted((keys / pipeline.SHARES_DIR).glob("officer-*.delete.json"))
     store.mkdir()
     public = pipeline.read_key(keys / pipeline.VAULT_PUBLIC)
     for name in ("a.png", "b.png"):
@@ -268,6 +269,13 @@ def test_two_officers_can_view_but_cannot_delete(stored):
         pipeline.delete_image(store / "a.png", shares[:2], "no reason", keys)
     with pytest.raises(ValueError):
         pipeline.delete_image(store / "a.png", [shares[0], shares[1], shares[1]], "one officer twice", keys)
+    # Two deletion shares do not rebuild the deletion key even outside the tool ...
+    assert signing.public_from_private(sharing.reconstruct_unchecked(shares[:2])) != pipeline.read_key(keys / pipeline.QUORUM_PUBLIC)
+    # ... and the viewing shares, which two officers CAN combine, are a different key.
+    viewing = [sharing.Share.from_json(path.read_text(encoding="utf-8"))
+               for path in sorted((keys / pipeline.SHARES_DIR).glob("officer-?.json"))]
+    with pytest.raises(ValueError):
+        pipeline.delete_image(store / "a.png", viewing, "viewing shares", keys)
     assert (store / "a.png").exists()
     assert AuditLog(keys / pipeline.AUDIT_LOG).entries()[-1]["action"] == "delete-denied"
 
@@ -285,8 +293,9 @@ def test_deleting_by_hand_shows_as_missing_and_cannot_be_dressed_up(stored):
 
 def test_shares_of_another_vault_cannot_delete(stored, tmp_path):
     keys, store, _ = stored
-    other = pipeline.setup_keys(tmp_path / "other", threshold=2, officers=3)
-    strangers = [sharing.Share.from_json(path.read_text(encoding="utf-8")) for path in other]
+    pipeline.setup_keys(tmp_path / "other", threshold=2, officers=3)
+    strangers = [sharing.Share.from_json(path.read_text(encoding="utf-8"))
+                 for path in sorted((tmp_path / "other" / pipeline.SHARES_DIR).glob("officer-*.delete.json"))]
     with pytest.raises(ValueError):
         pipeline.delete_image(store / "a.png", strangers, "wrong vault", keys)
     assert (store / "a.png").exists()

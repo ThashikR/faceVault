@@ -45,7 +45,7 @@ the comparison can be reproduced.
 | Alerts | A watch-list match is sent encrypted to the recipient and signed by the camera | SFace, X25519, ChaCha20-Poly1305, Ed25519 |
 | Signed images | The camera signs every image it locks, so an image made by anyone else is refused | Ed25519 |
 | Capture log | The camera lists every image it locked in a signed, hash-chained file, so a deleted or swapped image shows up | SHA-256, Ed25519 |
-| Agreed deletion | Deleting an image needs every officer's share and leaves a record only they can sign together | Ed25519 key derived from the vault key |
+| Agreed deletion | Deleting an image needs every officer's deletion share and leaves a record only all of them together can sign | A separate Ed25519 key, shared n-of-n |
 | Audit log | Every unlock, deletion and refused attempt is recorded in a hash-chained file | SHA-256 |
 
 The protected image is one PNG file. It carries everything needed to unlock it
@@ -213,7 +213,7 @@ python -m facevault reveal protected.png -o unlocked.png --share keys/shares/off
 python -m facevault read-alert outbox/<file>.alert.json
 python -m facevault audit
 python -m facevault captures --folder .
-python -m facevault delete protected.png --share keys/shares/officer-1.json --share keys/shares/officer-2.json --share keys/shares/officer-3.json --reason "court order 12"
+python -m facevault delete protected.png --share keys/shares/officer-1.delete.json --share keys/shares/officer-2.delete.json --share keys/shares/officer-3.delete.json --reason "court order 12"
 python -m facevault legacy photo.jpg
 ```
 
