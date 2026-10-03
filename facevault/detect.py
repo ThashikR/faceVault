@@ -6,12 +6,19 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+# OpenCV 5 prints a harmless warning each time a model is loaded.
+cv2.utils.logging.setLogLevel(cv2.utils.logging.LOG_LEVEL_ERROR)
+
 MODEL_DIR = Path(__file__).resolve().parent.parent / "models"
 YUNET = MODEL_DIR / "face_detection_yunet_2023mar.onnx"
 SFACE = MODEL_DIR / "face_recognition_sface_2021dec.onnx"
 
 # Cosine score above which OpenCV's SFace documentation treats two faces as the same person.
 MATCH_THRESHOLD = 0.363
+
+# Detector confidence needed before a region is locked. Deliberately low: a
+# missed face stays visible, while a false alarm only locks a harmless patch.
+LOCK_THRESHOLD = 0.5
 
 _IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -34,7 +41,7 @@ def _require(path):
 
 
 class FaceDetector:
-    def __init__(self, score_threshold=0.8):
+    def __init__(self, score_threshold=LOCK_THRESHOLD):
         self._net = cv2.FaceDetectorYN.create(_require(YUNET), "", (320, 320), score_threshold, 0.3, 5000)
 
     def detect(self, rgb):

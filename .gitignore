@@ -16,5 +16,8 @@ legacy_out/
 *.key
 audit.jsonl
 
+# Private planning notes
+notes/
+
 # Scratch output
 out/

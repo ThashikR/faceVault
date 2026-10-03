@@ -12,6 +12,7 @@ import hashlib
 import json
 import secrets
 from dataclasses import asdict, dataclass
+from functools import lru_cache
 from itertools import count
 from math import prod
 
@@ -69,8 +70,12 @@ def _next_prime(n):
     return next(c for c in count(n + 1) if _is_prime(c))
 
 
+@lru_cache(maxsize=None)
 def _parameters(secret_bytes, k, n):
-    """Public numbers: m0 bounds the secret, moduli are n primes just above it."""
+    """Public numbers: m0 bounds the secret, moduli are n primes just above it.
+
+    They depend only on the sizes, not on the secret, so they are found once.
+    """
     secret_bits = 8 * secret_bytes
     m0 = _next_prime(1 << secret_bits)
     moduli = []

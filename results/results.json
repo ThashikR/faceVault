@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "date": "2026-10-03",
+    "images": 1000,
+    "seed": 2026,
+    "dataset": "LFW (funneled), random sample",
+    "machine": "AMD64 Family 25 Model 80 Stepping 0, AuthenticAMD, Python 3.11.2, OpenCV 5.0.0, CPU only"
+  },
+  "legacy": {
+    "moduli": [
+      3,
+      5,
+      17
+    ],
+    "images": 1000,
+    "images_damaged_by_round_trip_pct": 81.0,
+    "round_trip_mse_mean": 244.37261999999998,
+    "round_trip_psnr_db_mean_over_damaged_images": 30.989947301733206,
+    "pixel_values_lost_pct_mean": 0.37581333333333333,
+    "pixel_values_lost_pct_max": 20.050133333333335,
+    "keyless_recovery_success_pct": 100.0,
+    "face_detected_pct": {
+      "original": 100.0,
+      "recovered_without_key": 100.0,
+      "share_mod_3_as_stored": 0.0,
+      "share_mod_5_as_stored": 0.0,
+      "share_mod_17_as_stored": 0.0,
+      "share_mod_3_brightened": 0.0,
+      "share_mod_5_brightened": 0.0,
+      "share_mod_17_brightened": 0.0
+    },
+    "entropy_bits": {
+      "original": 7.325866140013812,
+      "share_mod_3": 1.5749936342659692,
+      "share_mod_5": 2.302171356532352,
+      "share_mod_17": 4.0209258614716825
+    },
+    "adjacent_correlation": {
+      "original": 0.9888002389759488,
+      "share_mod_3": 0.12844978076542216,
+      "share_mod_5": 0.18551573511776884,
+      "share_mod_17": 0.41603394432074114
+    },
+    "storage_ratio_png_shares_vs_original": 2.195234618375575
+  },
+  "facevault": {
+    "images": 1000,
+    "lock_threshold": 0.5,
+    "images_with_a_face": 1000,
+    "images_with_no_face_found": 0,
+    "bit_exact_reveal_pct": 100.0,
+    "images_with_any_change_outside_faces": 0,
+    "face_detected_in_protected_pct": 0.0,
+    "face_area_pct_of_image_mean": 37.449704,
+    "ciphertext_entropy_bits_per_region_mean": 7.996700371847714,
+    "ciphertext_entropy_bits_pooled": 7.999997444996581,
+    "ciphertext_adjacent_correlation_mean": 0.0001435679135894617,
+    "ciphertext_adjacent_correlation_mean_abs": 0.005557258660241223,
+    "npcr_pct_mean": 99.60874467802283,
+    "uaci_pct_mean": 33.45919979238161,
+    "rejected_pct": {
+      "one_bit_flipped_in_face_region": 100.0,
+      "context_changed_in_header": 100.0,
+      "wrong_private_key": 100.0
+    },
+    "sface_similarity_original_vs_protected": {
+      "mean": 0.020324761124043227,
+      "max": 0.33008170980428986,
+      "pct_at_or_above_match_threshold": 0.0,
+      "match_threshold": 0.363
+    },
+    "time_ms_median": {
+      "detect": 4.549450008198619,
+      "protect": 1.0499499912839383,
+      "reveal": 0.7248500041896477
+    },
+    "storage_ratio_png_protected_vs_original": 1.4200223190746106,
+    "header_bytes_mean": 390.432
+  },
+  "lock_threshold": [
+    {
+      "lock_threshold": 0.9,
+      "images_with_face_still_found": 66,
+      "images_with_face_still_found_pct": 6.6,
+      "images_with_detection_inside_a_locked_region": 0,
+      "regions_locked_per_image_mean": 1.011,
+      "area_locked_pct_mean": 34.847788800000004
+    },
+    {
+      "lock_threshold": 0.8,
+      "images_with_face_still_found": 9,
+      "images_with_face_still_found_pct": 0.9,
+      "images_with_detection_inside_a_locked_region": 0,
+      "regions_locked_per_image_mean": 1.047,
+      "area_locked_pct_mean": 36.30664
+    },
+    {
+      "lock_threshold": 0.7,
+      "images_with_face_still_found": 1,
+      "images_with_face_still_found_pct": 0.1,
+      "images_with_detection_inside_a_locked_region": 0,
+      "regions_locked_per_image_mean": 1.063,
+      "area_locked_pct_mean": 36.829696
+    },
+    {
+      "lock_threshold": 0.6,
+      "images_with_face_still_found": 0,
+      "images_with_face_still_found_pct": 0.0,
+      "images_with_detection_inside_a_locked_region": 0,
+      "regions_locked_per_image_mean": 1.072,
+      "area_locked_pct_mean": 37.1740576
+    },
+    {
+      "lock_threshold": 0.5,
+      "images_with_face_still_found": 0,
+      "images_with_face_still_found_pct": 0.0,
+      "images_with_detection_inside_a_locked_region": 0,
+      "regions_locked_per_image_mean": 1.093,
+      "area_locked_pct_mean": 37.449704
+    },
+    {
+      "lock_threshold": 0.4,
+      "images_with_face_still_found": 0,
+      "images_with_face_still_found_pct": 0.0,
+      "images_with_detection_inside_a_locked_region": 0,
+      "regions_locked_per_image_mean": 1.109,
+      "area_locked_pct_mean": 37.8284592
+    },
+    {
+      "lock_threshold": 0.3,
+      "images_with_face_still_found": 0,
+      "images_with_face_still_found_pct": 0.0,
+      "images_with_detection_inside_a_locked_region": 0,
+      "regions_locked_per_image_mean": 1.137,
+      "area_locked_pct_mean": 38.234060799999995
+    }
+  ],
+  "watchlist": {
+    "people": 500,
+    "threshold": 0.363,
+    "true_accept_pct": 96.39999999999999,
+    "false_accept_pct": 0.0,
+    "genuine_similarity_mean": 0.65459982059359,
+    "impostor_similarity_mean": 0.0937846489954004
+  },
+  "speed": [
+    {
+      "resolution": "640x480",
+      "faces": 1,
+      "face_area_pct": 6.968098958333333,
+      "detect_ms": 17.643599974690005,
+      "facevault_protect_ms": 1.6058000037446618,
+      "of_which_background_hash_ms": 1.0984999826177955,
+      "whole_frame_aes_gcm_ms": 1.0593000042717904,
+      "legacy_encode_ms": 10.192499990807846,
+      "legacy_decode_ms": 44.457599986344576
+    },
+    {
+      "resolution": "1280x720",
+      "faces": 1,
+      "face_area_pct": 7.850694444444445,
+      "detect_ms": 45.33069999888539,
+      "facevault_protect_ms": 6.4202999928966165,
+      "of_which_background_hash_ms": 4.990800021914765,
+      "whole_frame_aes_gcm_ms": 3.1278000096790493,
+      "legacy_encode_ms": 33.728100010193884,
+      "legacy_decode_ms": 131.464700010838
+    },
+    {
+      "resolution": "1920x1080",
+      "faces": 1,
+      "face_area_pct": 7.073350694444445,
+      "detect_ms": 97.68410000833683,
+      "facevault_protect_ms": 13.638599979458377,
+      "of_which_background_hash_ms": 11.084899975685403,
+      "whole_frame_aes_gcm_ms": 6.91759999608621,
+      "legacy_encode_ms": 73.40750002185814,
+      "legacy_decode_ms": 308.5345999861602
+    }
+  ],
+  "sharing": [
+    {
+      "k": 2,
+      "n": 3,
+      "one_time_setup_ms": 41.74119999515824,
+      "k_subsets_tested": 3,
+      "k_subsets_correct": 3,
+      "k_minus_1_trials": 200,
+      "k_minus_1_recovered_key": 0,
+      "split_ms": 0.01750000228639692,
+      "combine_ms": 0.020499996026046574
+    },
+    {
+      "k": 3,
+      "n": 5,
+      "one_time_setup_ms": 58.34980000508949,
+      "k_subsets_tested": 10,
+      "k_subsets_correct": 10,
+      "k_minus_1_trials": 200,
+      "k_minus_1_recovered_key": 0,
+      "split_ms": 0.027900008717551827,
+      "combine_ms": 0.029149989131838083
+    },
+    {
+      "k": 5,
+      "n": 8,
+      "one_time_setup_ms": 102.92679999838583,
+      "k_subsets_tested": 56,
+      "k_subsets_correct": 56,
+      "k_minus_1_trials": 200,
+      "k_minus_1_recovered_key": 0,
+      "split_ms": 0.05980000423733145,
+      "combine_ms": 0.06605000817216933
+    }
+  ]
+}
