@@ -11,6 +11,13 @@ logged, and a watch-list match sends an encrypted, signed alert.
 
 *Sample image: NASA portrait of Eileen Collins, public domain.*
 
+## Two projects in this repository
+
+| | Folder | What it is |
+|---|---|---|
+| **2024 original** | [original-2024/](original-2024/) | *Advanced Surveillance System with Encrypted Alerts and Privacy Enhancement*, a final-year team project, with its [published paper](https://doi.org/10.55041/IJSREM29001) |
+| **2026 rebuild** | everything else | FaceVault, which keeps the goal and replaces the method |
+
 ## Where this came from
 
 FaceVault is a rebuild of a 2024 final-year team project, *Advanced
@@ -21,9 +28,10 @@ stored files give the image back to anyone, and pixel value 255 is destroyed
 on the way. The full review is in
 [docs/review-of-2024-report.md](docs/review-of-2024-report.md).
 
-The old scheme is kept in this repository (`facevault/legacy_rns.py`) together
-with the attacks on it (`facevault/attacks.py`), so the comparison can be
-reproduced.
+The 2024 app is kept in [original-2024/](original-2024/), rebuilt from the
+project report. Its scheme is also available as a baseline inside FaceVault
+(`facevault/legacy_rns.py`), together with the attacks on it
+(`facevault/attacks.py`), so the comparison can be reproduced.
 
 ## How it works
 
@@ -167,6 +175,7 @@ app.py            Streamlit demo
 experiments/      the script behind every number in this README
 tests/            pytest suite
 docs/             technical review of the 2024 report
+original-2024/    the 2024 project as it was (reconstructed app and its README)
 ```
 
 ## Limits
@@ -198,9 +207,12 @@ included in this repository.
 
 ## Credits
 
-- Original 2024 project: a five-student team (the author among them) and
-  their guide at the Dept. of CSE (AI & ML), Vidyavardhaka College of
-  Engineering, Mysuru.
+- Original 2024 project: a five-student team (the author among them) at the
+  Dept. of CSE (AI & ML), Vidyavardhaka College of Engineering, Mysuru. Its
+  literature survey was published as Ranjan Kumar H S, Nisarga Nab,
+  Paavani M R, Thashik R Paul, Varun S P and Dileep M, "Advanced Surveillance
+  System with Encrypted Alerts and Privacy Enhancement", IJSREM, vol. 8,
+  no. 3, March 2024, DOI [10.55041/IJSREM29001](https://doi.org/10.55041/IJSREM29001).
 - This rebuild: Thashik R Paul, developed with AI assistance (Claude).
 - Face models: [OpenCV Zoo](https://github.com/opencv/opencv_zoo) (YuNet, SFace).
 - Dataset: Labeled Faces in the Wild, University of Massachusetts Amherst.

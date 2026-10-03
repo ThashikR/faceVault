@@ -1,0 +1,5 @@
+streamlit
+numpy
+Pillow
+# Needs dlib, which is compiled on install: CMake and a C++ compiler must be present.
+face_recognition
