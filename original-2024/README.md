@@ -51,29 +51,10 @@ holds.
 The project report gave one measurement, for one image: mean squared error
 13.56 and PSNR 36.81 dB between the original and the decrypted image.
 
-## The files
+## The file
 
-These are the original 2024 files, unchanged.
-
-| File | Date | What it is |
-|---|---|---|
-| `my_app.py` | 20 Apr 2024 | The Streamlit app: training, face matching, encryption, decryption |
-| `development/0_RNS.ipynb` | 26 Feb 2024 | First experiment with residues on a greyscale image |
-| `development/1_rns00.py` | 30 Mar 2024 | Residues modulo 3, 5, 17 on the raw bytes of a BMP file |
-| `development/2_crt00.py` | 30 Mar 2024 | The matching decryption |
-| `development/3_test2_RNS.ipynb` | 31 Mar 2024 | The move from BMP bytes to image pixels, and the CRT functions the app uses |
-| `development/4_check_and_delete.ipynb` | 18 Apr 2024 | Face matching joined to the encryption |
-| `development/5_send.ipynb` | 13 Aug 2024 | The whole pipeline in two cells, without the screens |
-
-The file names in `development/` have a number added in front to show the
-order. Python files are byte-for-byte copies. In the notebooks the code cells
-are untouched and the saved outputs have been removed, because the outputs
-list the people in the test photographs.
-
-`1_rns00.py` appears to be where the 500 rule comes from: it works on the raw
-bytes of a BMP file and leaves the first 500 bytes alone, which keeps the file
-header intact so the result still opens as an image. Later versions carried
-the same rule over to pixels.
+`my_app.py` is the original Streamlit app, dated 20 April 2024 and unchanged:
+training, face matching, encryption and decryption in one file.
 
 The version shown in the project report's screenshots had a sidebar and the
 longer title *Surveillance System for Criminal Detection*. That later file was
